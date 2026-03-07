@@ -16,6 +16,9 @@ func setDebugEnabled(v bool) {
 }
 
 func (requestLogger) Infof(format string, args ...any) {
+	if !debugEnabled {
+		return
+	}
 	log.Printf("[INFO] "+format, args...)
 }
 
