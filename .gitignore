@@ -1,0 +1,14 @@
+/post
+/post-server
+/bin/
+/dist/
+*.exe
+*.log
+*.out
+coverage.out
+
+.env
+.env.local
+.env.*.local
+
+.DS_Store

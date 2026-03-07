@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ""
+            archive: tar.gz
+          - goos: darwin
+            goarch: arm64
+            ext: ""
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          export CGO_ENABLED=0
+          export GOOS="${{ matrix.goos }}"
+          export GOARCH="${{ matrix.goarch }}"
+          BIN_NAME="post-server${{ matrix.ext }}"
+          OUT="dist/${BIN_NAME}"
+          go build -trimpath -ldflags "-s -w" -o "${OUT}" ./cmd/post-server
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            (cd dist && zip -q "post-server_${GOOS}_${GOARCH}.zip" "${BIN_NAME}")
+          else
+            (cd dist && tar -czf "post-server_${GOOS}_${GOARCH}.tar.gz" "${BIN_NAME}")
+          fi
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/post-server_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
