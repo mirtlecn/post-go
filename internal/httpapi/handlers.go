@@ -30,22 +30,31 @@ type Handler struct {
 // NewHandler builds handler from env.
 func NewHandler() *Handler {
 	env := config.Env{}
-	return &Handler{Cfg: core.LoadConfig(env)}
+	cfg := core.LoadConfig(env)
+	setDebugEnabled(env.Bool("POST_DEBUG", false))
+	return &Handler{Cfg: cfg}
 }
 
 // ServeHTTP routes requests.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	logger := requestLogger{}
+	started := time.Now()
+	rec := withRecorder(w)
+	logger.Infof("request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+	logger.Debugf("headers: ua=%q content-type=%q xff=%q", r.Header.Get("User-Agent"), r.Header.Get("Content-Type"), r.Header.Get("X-Forwarded-For"))
+	defer logRequestDone(logger, r, rec, started)
 	if r.URL.Path == "/" {
-		h.handleRoot(w, r)
+		h.handleRoot(rec, r)
 		return
 	}
-	h.handlePath(w, r)
+	h.handlePath(rec, r)
 }
 
 func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		if !core.IsAuthenticated(r, h.Cfg.SecretKey) {
+			requestLogger{}.Warnf("auth failed: POST / from %s", r.RemoteAddr)
 			utils.Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil, nil)
 			return
 		}
@@ -53,6 +62,7 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	case http.MethodPut:
 		if !core.IsAuthenticated(r, h.Cfg.SecretKey) {
+			requestLogger{}.Warnf("auth failed: PUT / from %s", r.RemoteAddr)
 			utils.Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil, nil)
 			return
 		}
@@ -60,6 +70,7 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	case http.MethodDelete:
 		if !core.IsAuthenticated(r, h.Cfg.SecretKey) {
+			requestLogger{}.Warnf("auth failed: DELETE / from %s", r.RemoteAddr)
 			utils.Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil, nil)
 			return
 		}
@@ -74,6 +85,7 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 		h.handleLookup(w, r, "/")
 		return
 	default:
+		requestLogger{}.Warnf("method not allowed: %s /", r.Method)
 		utils.Error(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", nil, nil)
 		return
 	}
@@ -82,6 +94,7 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handlePath(w http.ResponseWriter, r *http.Request) {
 	pathRaw := strings.TrimPrefix(r.URL.Path, "/")
 	if pathRaw == "" {
+		requestLogger{}.Warnf("path empty for %s %s", r.Method, r.URL.Path)
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
@@ -96,11 +109,13 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 	ctx := context.Background()
 	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
 	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
 	stored, err := rdb.Get(ctx, storage.LinksPrefix+path).Result()
 	if err != nil {
+		requestLogger{}.Warnf("lookup miss: %s (%v)", path, err)
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
@@ -117,11 +132,13 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 	ctx := context.Background()
 	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
 	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
 	stored, err := rdb.Get(ctx, storage.LinksPrefix+path).Result()
 	if err != nil {
+		requestLogger{}.Warnf("lookup miss: %s (%v)", path, err)
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
@@ -146,6 +163,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
 	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
@@ -171,6 +189,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(key, storage.LinksPrefix)
 		stored, err := rdb.Get(ctx, key).Result()
 		if err != nil {
+			requestLogger{}.Warnf("list get failed: %s (%v)", key, err)
 			continue
 		}
 		typ, content := storage.ParseStoredValue(stored)
@@ -190,6 +209,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	body, err := storage.ParseJSONBody(r)
 	if err != nil {
+		requestLogger{}.Warnf("delete parse json failed: %v", err)
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body", nil, nil)
 		return
 	}
@@ -201,12 +221,14 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
 	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
 	key := storage.LinksPrefix + pathVal
 	stored, err := rdb.Get(ctx, key).Result()
 	if err != nil {
+		requestLogger{}.Warnf("delete miss: %s (%v)", pathVal, err)
 		utils.Error(w, http.StatusNotFound, "not_found", "path \""+pathVal+"\" not found", nil, nil)
 		return
 	}
@@ -218,7 +240,9 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		conf := h.Cfg.S3Config()
 		if conf.IsConfigured() {
 			if client, err := s3.NewClient(conf); err == nil {
-				_ = client.DeleteObject(ctx, content)
+				if err := client.DeleteObject(ctx, content); err != nil {
+					requestLogger{}.Errorf("s3 delete failed: %s (%v)", content, err)
+				}
 			}
 		}
 	}
@@ -234,6 +258,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request, allowOver
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") {
 		if !h.Cfg.S3Config().IsConfigured() {
+			requestLogger{}.Warnf("file upload requested but S3 not configured")
 			utils.Error(w, http.StatusNotImplemented, "s3_not_configured", "S3 service is not configured", nil, nil)
 			return
 		}
@@ -247,11 +272,13 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	maxFileBytes := int64(h.Cfg.MaxFileMB) * 1024 * 1024
 	r.Body = http.MaxBytesReader(w, r.Body, maxFileBytes+1024*1024)
 	if err := r.ParseMultipartForm(maxFileBytes + 1024*1024); err != nil {
+		requestLogger{}.Warnf("multipart parse failed: %v", err)
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 		return
 	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
+		requestLogger{}.Warnf("file missing in multipart: %v", err)
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`file` field is required for multipart/form-data", nil, nil)
 		return
 	}
@@ -261,6 +288,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	ttlVal := r.FormValue("ttl")
 
 	if r.Method == http.MethodPut && pathVal == "" {
+		requestLogger{}.Warnf("file upload PUT missing path")
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required for PUT requests", nil, nil)
 		return
 	}
@@ -268,6 +296,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	fileExt := strings.ToLower(pathpkgExt(header.Filename))
 	if pathVal != "" {
 		if err := storage.ValidatePath(pathVal); err != nil {
+			requestLogger{}.Warnf("invalid path: %s (%v)", pathVal, err)
 			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 			return
 		}
@@ -281,12 +310,14 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	ctx := context.Background()
 	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
 	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
 	key := storage.LinksPrefix + pathVal
 	existing, _ := rdb.Get(ctx, key).Result()
 	if existing != "" && !allowOverwrite {
+		requestLogger{}.Warnf("conflict on path: %s", pathVal)
 		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use PUT to overwrite", nil)
 		return
 	}
@@ -304,6 +335,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	conf := h.Cfg.S3Config()
 	client, err := s3.NewClient(conf)
 	if err != nil {
+		requestLogger{}.Errorf("s3 client init failed: %v", err)
 		utils.Error(w, http.StatusNotImplemented, "s3_not_configured", "S3 service is not configured", nil, nil)
 		return
 	}
@@ -313,6 +345,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	if size <= 0 {
 		buf, err := io.ReadAll(file)
 		if err != nil {
+			requestLogger{}.Errorf("read upload failed: %v", err)
 			utils.Error(w, http.StatusInternalServerError, "internal", "Failed to read upload", nil, nil)
 			return
 		}
@@ -322,6 +355,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 
 	objectKey, err := client.UploadFile(ctx, header.Filename, size, header.Header.Get("Content-Type"), reader, ttlSeconds)
 	if err != nil {
+		requestLogger{}.Errorf("s3 upload failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Failed to upload file", nil, nil)
 		return
 	}
@@ -355,6 +389,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allowOverwrite bool) {
 	body, err := storage.ParseJSONBody(r)
 	if err != nil {
+		requestLogger{}.Warnf("create parse json failed: %v", err)
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body", nil, nil)
 		return
 	}
@@ -374,6 +409,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 
 	if pathVal != "" {
 		if err := storage.ValidatePath(pathVal); err != nil {
+			requestLogger{}.Warnf("invalid path: %s (%v)", pathVal, err)
 			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 			return
 		}
@@ -391,6 +427,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		case "md2html":
 			html, err := convert.ConvertMarkdownToHTML(inputContent)
 			if err != nil {
+				requestLogger{}.Warnf("md2html failed: %v", err)
 				utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 				return
 			}
@@ -399,6 +436,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		case "qrcode":
 			qr, err := convert.ConvertToQRCode(inputContent)
 			if err != nil {
+				requestLogger{}.Warnf("qrcode failed: %v", err)
 				utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 				return
 			}
@@ -429,6 +467,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	ctx := context.Background()
 	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
 	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
@@ -459,10 +498,14 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 			ttlMinutes = 1
 			ttlWarning = "invalid ttl, fallback to 1 minute"
 		}
-		_ = rdb.SetEx(ctx, key, stored, time.Duration(ttlMinutes)*time.Minute).Err()
+		if err := rdb.SetEx(ctx, key, stored, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
+			requestLogger{}.Errorf("redis setex failed: %v", err)
+		}
 		expiresIn = ttlMinutes
 	} else {
-		_ = rdb.Set(ctx, key, stored, 0).Err()
+		if err := rdb.Set(ctx, key, stored, 0).Err(); err != nil {
+			requestLogger{}.Errorf("redis set failed: %v", err)
+		}
 	}
 
 	result := CreateResponse{
@@ -492,27 +535,33 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, objectKey string) {
 	conf := h.Cfg.S3Config()
 	if !conf.IsConfigured() {
+		requestLogger{}.Warnf("file fetch requested but S3 not configured")
 		utils.Error(w, http.StatusNotImplemented, "s3_not_configured", "S3 service is not configured", nil, nil)
 		return
 	}
 	client, err := s3.NewClient(conf)
 	if err != nil {
+		requestLogger{}.Errorf("s3 client init failed: %v", err)
 		utils.Error(w, http.StatusNotImplemented, "s3_not_configured", "S3 service is not configured", nil, nil)
 		return
 	}
 	ctx := context.Background()
 	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
 	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
 	if cached, err := core.GetFileCache(ctx, rdb, pathVal); err == nil && cached != nil {
+		requestLogger{}.Infof("file cache hit: %s", pathVal)
 		utils.Binary(w, http.StatusOK, cached.Buffer, cached.ContentType, cached.ContentLength, true)
 		return
 	}
+	requestLogger{}.Infof("file cache miss: %s", pathVal)
 
 	obj, info, err := client.GetObject(ctx, objectKey)
 	if err != nil {
+		requestLogger{}.Errorf("s3 get failed: %s (%v)", objectKey, err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Failed to retrieve file", nil, nil)
 		return
 	}

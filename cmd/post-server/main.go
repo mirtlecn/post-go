@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -26,6 +27,7 @@ func main() {
 	}
 
 	addr := ":" + port
+	log.Printf("env: PORT=%s LINKS_REDIS_URL=%s", port, h.Cfg.RedisURL)
 	fmt.Printf("\n✅  Server running at http://localhost:%s\n", port)
 	fmt.Println("    Press Ctrl+C to stop.\n")
 	_ = http.ListenAndServe(addr, h)
