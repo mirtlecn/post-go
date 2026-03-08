@@ -115,7 +115,7 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 	}
 	stored, err := rdb.Get(ctx, storage.LinksPrefix+path).Result()
 	if err != nil {
-		requestLogger{}.Warnf("lookup miss: %s (%v)", path, err)
+		requestLogger{}.Infof("lookup miss: %s (%v)", path, err)
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
@@ -138,14 +138,14 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 	}
 	stored, err := rdb.Get(ctx, storage.LinksPrefix+path).Result()
 	if err != nil {
-		requestLogger{}.Warnf("lookup miss: %s (%v)", path, err)
+		requestLogger{}.Infof("lookup miss: %s (%v)", path, err)
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
 	typ, content := storage.ParseStoredValue(stored)
 	switch typ {
 	case "url":
-		utils.Redirect(w, r, content, true)
+		utils.Redirect(w, r, content, false)
 		return
 	case "html":
 		utils.HTML(w, http.StatusOK, content, true)
