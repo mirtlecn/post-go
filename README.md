@@ -1,3 +1,5 @@
+[Running in Vercel / Node](https://github.com/mirtlecn/post)
+
 # Post-go — Lightweight File, Text & URL Sharing API
 
 This is a Go rewrite of the Post service for high performance, low footprint, and easy deployment.
