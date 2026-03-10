@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
+	"regexp"
 	"github.com/skip2/go-qrcode"
 
 	callouts "github.com/ZMT-Creative/gm-alert-callouts"
@@ -103,14 +103,42 @@ func stripFrontMatter(input string) string {
 }
 
 func wrapHTML(body, alertsStyle string) string {
+	// 基础资源
 	cssURL := "https://cdn.jsdelivr.net/gh/sindresorhus/github-markdown-css/github-markdown.min.css"
+	darkBg := "#0d1117"
+
+	// 外部资源定义
 	hlCSSLight := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github.min.css"
 	hlCSSDark := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.min.css"
 	hlJS := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"
 	tocJS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-toc.min.js"
 	tocCSS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-toc.min.css"
 	katexCSS := "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
-	darkBg := "#0d1117"
+
+	// 动态标签容器
+	var extraHead strings.Builder
+	var extraBody strings.Builder
+
+	// 1. 检查 TOC：统计 h1~h6 标签数量
+	reHeaders := regexp.MustCompile(`(?i)<h[1-6]`)
+	headerMatches := reHeaders.FindAllString(body, -1)
+	if len(headerMatches) >= 2 {
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + tocCSS + "\">\n")
+		extraBody.WriteString("<script src=\"" + tocJS + "\"></script>\n")
+	}
+
+	// 2. 检查代码高亮
+	if strings.Contains(body, "<code class=\"language-") {
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + hlCSSLight + "\" media=\"(prefers-color-scheme: light)\">\n")
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + hlCSSDark + "\" media=\"(prefers-color-scheme: dark)\">\n")
+		extraBody.WriteString("<script src=\"" + hlJS + "\" defer></script>\n")
+		extraBody.WriteString("<script>window.addEventListener('DOMContentLoaded', function(){ if (window.hljs && hljs.highlightAll) hljs.highlightAll(); });</script>\n")
+	}
+
+	// 3. 检查公式
+	if strings.Contains(body, "<span class=\"katex-display\">") {
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + katexCSS + "\">\n")
+	}
 
 	return "<!doctype html>\n" +
 		"<html>\n" +
@@ -119,10 +147,7 @@ func wrapHTML(body, alertsStyle string) string {
 		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimal-ui\">\n" +
 		"<title></title>\n" +
 		"<link rel=\"stylesheet\" href=\"" + cssURL + "\">\n" +
-		"<link rel=\"stylesheet\" href=\"" + tocCSS + "\">\n" +
-		"<link rel=\"stylesheet\" href=\"" + hlCSSLight + "\" media=\"(prefers-color-scheme: light)\">\n" +
-		"<link rel=\"stylesheet\" href=\"" + hlCSSDark + "\" media=\"(prefers-color-scheme: dark)\">\n" +
-		"<link rel=\"stylesheet\" href=\"" + katexCSS + "\">\n" +
+		extraHead.String() +
 		"<style>\n" +
 		"  body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; }\n" +
 		"  .markdown-body .markdown-alert { padding: 0.5rem 1rem; }\n" +
@@ -135,9 +160,7 @@ func wrapHTML(body, alertsStyle string) string {
 		"<article class=\"markdown-body\">\n" +
 		body +
 		"\n</article>\n" +
-		"<script src=\"" + hlJS + "\" defer></script>\n" +
-		"<script>window.addEventListener('DOMContentLoaded', function(){ if (window.hljs && hljs.highlightAll) hljs.highlightAll(); });</script>\n" +
-		"<script src=\"" + tocJS + "\"></script>\n" +
+		extraBody.String() +
 		"</body>\n" +
 		"</html>"
 }
