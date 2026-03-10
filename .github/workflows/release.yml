@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -52,8 +53,14 @@ jobs:
             (cd dist && tar -czf "post-server_${GOOS}_${GOARCH}.tar.gz" "${BIN_NAME}")
           fi
 
-      - name: Publish Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v6
         with:
-          files: |
-            dist/post-server_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
+          name: post-server_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: dist/post-server_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
+
+      # - name: Publish Release
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     files: |
+      #       dist/post-server_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
