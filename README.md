@@ -30,49 +30,76 @@ Optional env:
 
 Write operations require `Authorization: Bearer <SECRET_KEY>`.
 
+Suggested shell variables:
+
 ```bash
-# POST /  Create an entry (returns 409 if path already exists)
-curl -X POST https://example.com/ \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://target.com","path":"mylink","ttl":1440}'
-
-# PUT /  Create or overwrite (201 if new, 200 if overwritten)
-curl -X PUT https://example.com/ \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://new-target.com","path":"mylink"}'
-
-# POST /  Upload a binary file (multipart/form-data, stored in S3)
-curl -X POST https://example.com/ \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@photo.jpg" \
-  -F "path=myimg" \
-  -F "ttl=1440"
-
-# DELETE /  Delete an entry
-curl -X DELETE https://example.com/ \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"path":"mylink"}'
-
-# GET /  List all entries (requires auth)
-curl https://example.com/ \
-  -H "Authorization: Bearer <token>"
-
-# GET /:path  Access content (no auth required)
-curl https://example.com/mylink
+export POST_BASE_URL="https://example.com"
+export POST_TOKEN="your-secret-key"
 ```
 
-Response example:
-```json
-{
-  "surl": "https://example.com/mylink",
-  "path": "mylink",
-  "type": "url",
-  "content": "https://target.com",
-  "expires_in": null
-}
+```bash
+# Create a short URL or text snippet with JSON.
+# `type` can be omitted for normal URLs, or set to `text` / `html`.
+curl "$POST_BASE_URL" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://target.com",
+    "path": "mylink",
+    "ttl": 1440
+  }'
+
+# Create rendered HTML from Markdown on write.
+curl "$POST_BASE_URL" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "# Title\n\nHello from Markdown",
+    "path": "doc/readme",
+    "convert": "md2html"
+  }'
+
+# Upload a file to S3-compatible storage.
+curl "$POST_BASE_URL" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "file=@./photo.jpg" \
+  -F "path=uploads/photo"
+
+# Update an existing entry with PUT.
+curl "$POST_BASE_URL" \
+  -X PUT \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://new-target.com",
+    "path": "mylink"
+  }'
+
+# List all entries.
+curl "$POST_BASE_URL" \
+  -H "Authorization: Bearer $POST_TOKEN"
+
+# Export full content instead of preview.
+curl "$POST_BASE_URL" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "x-export: true"
+
+# Read one entry as JSON metadata.
+curl "$POST_BASE_URL/mylink" \
+  -H "Authorization: Bearer $POST_TOKEN"
+
+# Read publicly by path: URL entries redirect, text/html return directly, files stream.
+curl -L "$POST_BASE_URL/mylink"
+
+# Delete by path.
+curl "$POST_BASE_URL" \
+  -X DELETE \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"mylink"}'
 ```
 
 ---
@@ -81,4 +108,4 @@ Response example:
 
 MIT License.
 
-Authors: Mirtle, Codex (OpenAI).
+Authors: Mirtle, Codex
