@@ -78,6 +78,9 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	case http.MethodGet:
 		if core.IsAuthenticated(r, h.Cfg.SecretKey) {
+			if h.handleLookupAuthedFromBody(w, r) {
+				return
+			}
 			h.handleList(w, r)
 			return
 		}
@@ -98,11 +101,26 @@ func (h *Handler) handlePath(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
-	if core.IsAuthenticated(r, h.Cfg.SecretKey) {
-		h.handleLookupAuthed(w, r, pathRaw)
-		return
-	}
 	h.handleLookup(w, r, pathRaw)
+}
+
+func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Request) bool {
+	body, err := storage.ParseJSONBody(r)
+	if err != nil {
+		requestLogger{}.Warnf("lookup parse json failed: %v", err)
+		utils.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body", nil, nil)
+		return true
+	}
+	pathVal, hasPath := storage.MustString(body, "path")
+	if !hasPath {
+		return false
+	}
+	if pathVal == "" {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
+		return true
+	}
+	h.handleLookupAuthed(w, r, pathVal)
+	return true
 }
 
 func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, path string) {
@@ -120,11 +138,12 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 		return
 	}
 	typ, content := storage.ParseStoredValue(stored)
+	content = responseContent(typ, content, isExportRequest(r))
 	utils.JSON(w, http.StatusOK, ItemResponse{
 		SURL:    storage.GetDomain(r) + "/" + path,
 		Path:    path,
 		Type:    typ,
-		Content: storage.PreviewContent(typ, content),
+		Content: content,
 	})
 }
 
@@ -169,7 +188,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	domain := storage.GetDomain(r)
-	isExport := strings.ToLower(r.Header.Get("x-export")) == "true"
+	isExport := isExportRequest(r)
 	var cursor uint64
 	var keys []string
 	for {
@@ -193,9 +212,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		typ, content := storage.ParseStoredValue(stored)
-		if !isExport {
-			content = storage.PreviewContent(typ, content)
-		}
+		content = responseContent(typ, content, isExport)
 		links = append(links, ItemResponse{
 			SURL:    domain + "/" + path,
 			Path:    path,
@@ -247,10 +264,11 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	isExport := isExportRequest(r)
 	utils.JSON(w, http.StatusOK, DeleteResponse{
 		Deleted: pathVal,
 		Type:    typ,
-		Content: storage.PreviewContent(typ, content),
+		Content: responseContent(typ, content, isExport),
 	})
 }
 
@@ -377,11 +395,12 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	if allowOverwrite && existing != "" {
 		status = http.StatusOK
 	}
+	isExport := isExportRequest(r)
 	utils.JSON(w, status, CreateResponse{
 		SURL:      storage.GetDomain(r) + "/" + pathVal,
 		Path:      pathVal,
 		Type:      "file",
-		Content:   objectKey,
+		Content:   responseContent("file", objectKey, isExport),
 		ExpiresIn: expiresIn,
 	})
 }
@@ -474,6 +493,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	key := storage.LinksPrefix + pathVal
 	stored := storage.BuildStoredValue(contentType, inputContent)
 	existing, _ := rdb.Get(ctx, key).Result()
+	isExport := isExportRequest(r)
 	if existing != "" && !allowOverwrite {
 		exType, exContent := storage.ParseStoredValue(existing)
 		details := map[string]any{
@@ -481,7 +501,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 				SURL:    storage.GetDomain(r) + "/" + pathVal,
 				Path:    pathVal,
 				Type:    exType,
-				Content: storage.PreviewContent(exType, exContent),
+				Content: responseContent(exType, exContent, isExport),
 			},
 		}
 		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use PUT to overwrite", details)
@@ -512,12 +532,12 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		SURL:      storage.GetDomain(r) + "/" + pathVal,
 		Path:      pathVal,
 		Type:      contentType,
-		Content:   storage.PreviewContent(contentType, inputContent),
+		Content:   responseContent(contentType, inputContent, isExport),
 		ExpiresIn: expiresIn,
 	}
 	if existing != "" {
 		exType, exContent := storage.ParseStoredValue(existing)
-		result.Overwritten = storage.PreviewContent(exType, exContent)
+		result.Overwritten = responseContent(exType, exContent, isExport)
 	}
 	if ttlWarning != nil {
 		if s, ok := ttlWarning.(string); ok {
@@ -639,6 +659,17 @@ func parseInt64(s string) (int64, error) {
 func hasKey(m map[string]any, key string) bool {
 	_, ok := m[key]
 	return ok
+}
+
+func isExportRequest(r *http.Request) bool {
+	return strings.ToLower(r.Header.Get("x-export")) == "true"
+}
+
+func responseContent(typ, content string, isExport bool) string {
+	if isExport {
+		return content
+	}
+	return storage.PreviewContent(typ, content)
 }
 
 func pathpkgExt(name string) string {

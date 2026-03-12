@@ -29,7 +29,7 @@ func main() {
 	addr := ":" + port
 	log.Printf("env: PORT=%s LINKS_REDIS_URL=%s", port, h.Cfg.RedisURL)
 	fmt.Printf("\n✅  Server running at http://localhost:%s\n", port)
-	fmt.Println("    Press Ctrl+C to stop.\n")
+	fmt.Print("    Press Ctrl+C to stop.\n\n")
 	_ = http.ListenAndServe(addr, h)
 }
 

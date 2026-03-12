@@ -13,7 +13,7 @@ Prerequisites:
 
 ```bash
 go mod tidy
-cp .env.example .env.local
+cp .env.example .env.local # The server loads env from `.env.local` first, then `.env`.
 go build ./cmd/post-server
 ./post-server
 ```
@@ -83,22 +83,50 @@ curl "$POST_BASE_URL" \
   -H "Authorization: Bearer $POST_TOKEN"
 
 # Export full content instead of preview.
+# Works for list, single-path lookup, create/update, and delete responses.
 curl "$POST_BASE_URL" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -H "x-export: true"
 
 # Read one entry as JSON metadata.
-curl "$POST_BASE_URL/mylink" \
-  -H "Authorization: Bearer $POST_TOKEN"
+curl "$POST_BASE_URL" \
+  -X GET \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"mylink"}'
+
+# Read one entry as JSON metadata and export full content.
+curl "$POST_BASE_URL" \
+  -X GET \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "x-export: true" \
+  -d '{"path":"mylink"}'
 
 # Read publicly by path: URL entries redirect, text/html return directly, files stream.
 curl -L "$POST_BASE_URL/mylink"
+
+# Create and export full content in response.
+curl "$POST_BASE_URL" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "x-export: true" \
+  -d '{"url":"https://target.com","path":"mylink"}'
 
 # Delete by path.
 curl "$POST_BASE_URL" \
   -X DELETE \
   -H "Authorization: Bearer $POST_TOKEN" \
   -H "Content-Type: application/json" \
+  -d '{"path":"mylink"}'
+
+# Delete and export full content in response.
+curl "$POST_BASE_URL" \
+  -X DELETE \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "x-export: true" \
   -d '{"path":"mylink"}'
 ```
 
