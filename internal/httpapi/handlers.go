@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -211,12 +212,26 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			requestLogger{}.Warnf("list get failed: %s (%v)", key, err)
 			continue
 		}
+		ttlSeconds, err := rdb.TTL(ctx, key).Result()
+		if err != nil {
+			requestLogger{}.Warnf("list ttl failed: %s (%v)", key, err)
+			continue
+		}
 		typ, content := storage.ParseStoredValue(stored)
 		content = responseContent(typ, content, isExport)
+		var ttl *int64
+		if ttlSeconds > 0 {
+			ttlMinutes := int64(math.Ceil(ttlSeconds.Minutes()))
+			if ttlMinutes < 1 {
+				ttlMinutes = 1
+			}
+			ttl = &ttlMinutes
+		}
 		links = append(links, ItemResponse{
 			SURL:    domain + "/" + path,
 			Path:    path,
 			Type:    typ,
+			TTL:     ttl,
 			Content: content,
 		})
 	}

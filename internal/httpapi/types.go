@@ -6,17 +6,18 @@ type ItemResponse struct {
 	SURL    string `json:"surl"`
 	Path    string `json:"path"`
 	Type    string `json:"type"`
+	TTL     *int64 `json:"ttl"`
 	Content string `json:"content"`
 }
 
 type CreateResponse struct {
-	SURL       string `json:"surl"`
-	Path       string `json:"path"`
-	Type       string `json:"type"`
-	Content    string `json:"content"`
-	ExpiresIn  any    `json:"expires_in"`
+	SURL        string `json:"surl"`
+	Path        string `json:"path"`
+	Type        string `json:"type"`
+	Content     string `json:"content"`
+	ExpiresIn   any    `json:"expires_in"`
 	Overwritten string `json:"overwritten,omitempty"`
-	Warning    string `json:"warning,omitempty"`
+	Warning     string `json:"warning,omitempty"`
 }
 
 type DeleteResponse struct {
