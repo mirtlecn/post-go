@@ -111,8 +111,8 @@ func wrapHTML(body, alertsStyle string) string {
 	hlCSSLight := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github.min.css"
 	hlCSSDark := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.min.css"
 	hlJS := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"
-	tocJS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-toc.min.js"
-	tocCSS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-toc.min.css"
+	tocJS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-addon.min.js"
+	tocCSS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-addon.min.css"
 	katexCSS := "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
 
 	// 动态标签容器
