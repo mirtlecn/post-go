@@ -97,7 +97,7 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handlePath(w http.ResponseWriter, r *http.Request) {
 	pathRaw := strings.TrimPrefix(r.URL.Path, "/")
 	if pathRaw == "" {
-		requestLogger{}.Warnf("path empty for %s %s", r.Method, r.URL.Path)
+		requestLogger{}.Infof("path empty for %s %s", r.Method, r.URL.Path)
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
