@@ -1,4 +1,4 @@
-[Running in Vercel / Node](https://github.com/mirtlecn/post)
+[Vercel / Node / Web GUI](https://github.com/mirtlecn/post)
 
 # Post-go — Lightweight File, Text & URL Sharing API
 
