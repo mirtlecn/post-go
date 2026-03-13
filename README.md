@@ -26,6 +26,38 @@ Optional env:
 
 ---
 
+## Testing
+
+Run focused Go tests while working on a specific area:
+
+```bash
+go test ./internal/redis
+go test ./internal/httpapi
+go test ./internal/convert
+```
+
+Recommended verification flow for staged changes:
+
+```bash
+# Goal 1
+go test ./internal/redis
+
+# Goal 2-4
+go test ./internal/httpapi ./internal/convert
+
+# Final verification
+go test ./...
+```
+
+The current automated coverage includes:
+- Redis client lifecycle behavior
+- HTTP create/delete failure handling
+- Upload compensation when Redis persistence fails
+- Existing path extension behavior for file uploads
+- Existing raw HTML preservation in Markdown conversion
+
+---
+
 ## API
 
 Write operations require `Authorization: Bearer <SECRET_KEY>`.
