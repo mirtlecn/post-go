@@ -232,6 +232,23 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	}
 }
 
+func TestHandleFileUploadAppendsFilenameExtensionToPath(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"path": "custom/path"}, "note.txt", "hello")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if store.lastSetKey != "surl:custom/path.txt" {
+		t.Fatalf("expected path to include uploaded file extension, got %q", store.lastSetKey)
+	}
+}
+
 func TestHandleFileUploadReturnsMainFailureWhenCompensationFails(t *testing.T) {
 	store := &fakeRedisStore{setErr: errors.New("write failed")}
 	fileStore := &fakeFileStore{
