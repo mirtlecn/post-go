@@ -1,4 +1,4 @@
-[Vercel / Node / Web GUI](https://github.com/mirtlecn/post)
+[Vercel / Node.js / Web GUI](https://github.com/mirtlecn/post) | [CLI Client](https://github.com/mirtlecn/post-cli)
 
 # Post-go — Lightweight File, Text & URL Sharing API
 
@@ -164,8 +164,8 @@ curl "$POST_BASE_URL" \
 
 ---
 
-## License
+## Credits
 
-MIT License.
+MIT Licence
 
-Authors: Mirtle, Codex
+© Mirtle together with OpenAI Codex
