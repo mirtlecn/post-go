@@ -408,14 +408,14 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 			ttlMinutes = 1
 		}
 		if err := rdb.SetEx(ctx, key, storedValue, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
-			requestLogger{}.Errorf("redis setex failed: %v", err)
+			h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
 			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 			return
 		}
 		expiresIn = ttlMinutes
 	} else {
 		if err := rdb.Set(ctx, key, storedValue, 0).Err(); err != nil {
-			requestLogger{}.Errorf("redis set failed: %v", err)
+			h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
 			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 			return
 		}
@@ -647,6 +647,13 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, obj
 	w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=86400")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, obj)
+}
+
+func (h *Handler) handleUploadPersistenceFailure(ctx context.Context, fileStore fileObjectStore, objectKey string, writeErr error) {
+	requestLogger{}.Errorf("redis write failed after upload: %v", writeErr)
+	if err := fileStore.DeleteObject(ctx, objectKey); err != nil {
+		requestLogger{}.Errorf("s3 compensation delete failed: %s (%v)", objectKey, err)
+	}
 }
 
 func randomPath() string {
