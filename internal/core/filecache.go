@@ -7,8 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 const fileCacheTTL = time.Hour
@@ -36,7 +34,7 @@ type fileCacheMeta struct {
 }
 
 // GetFileCache reads cached file if exists.
-func GetFileCache(ctx context.Context, rdb *redis.Client, path string) (*FileCacheItem, error) {
+func GetFileCache(ctx context.Context, rdb RedisStore, path string) (*FileCacheItem, error) {
 	vals, err := rdb.MGet(ctx, fileCacheKey(path), metaCacheKey(path)).Result()
 	if err != nil {
 		return nil, err
@@ -68,7 +66,7 @@ func GetFileCache(ctx context.Context, rdb *redis.Client, path string) (*FileCac
 }
 
 // SetFileCache writes cached file to Redis.
-func SetFileCache(ctx context.Context, rdb *redis.Client, path string, item *FileCacheItem) error {
+func SetFileCache(ctx context.Context, rdb RedisStore, path string, item *FileCacheItem) error {
 	b64 := base64.StdEncoding.EncodeToString(item.Buffer)
 	h := sha1.Sum(item.Buffer)
 	meta := fileCacheMeta{
@@ -86,7 +84,7 @@ func SetFileCache(ctx context.Context, rdb *redis.Client, path string, item *Fil
 }
 
 // ClearFileCache removes cache keys.
-func ClearFileCache(ctx context.Context, rdb *redis.Client, path string) error {
+func ClearFileCache(ctx context.Context, rdb RedisStore, path string) error {
 	if err := rdb.Unlink(ctx, fileCacheKey(path), metaCacheKey(path)).Err(); err == nil {
 		return nil
 	}

@@ -17,15 +17,14 @@ import (
 	"post-go/internal/config"
 	"post-go/internal/convert"
 	"post-go/internal/core"
-	redisx "post-go/internal/redis"
-	"post-go/internal/s3"
 	"post-go/internal/storage"
 	"post-go/internal/utils"
 )
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	Cfg core.AppConfig
+	Cfg  core.AppConfig
+	deps handlerDependencies
 }
 
 // NewHandler builds handler from env.
@@ -33,7 +32,7 @@ func NewHandler() *Handler {
 	env := config.Env{}
 	cfg := core.LoadConfig(env)
 	setDebugEnabled(env.Bool("POST_DEBUG", false))
-	return &Handler{Cfg: cfg}
+	return &Handler{Cfg: cfg, deps: defaultHandlerDependencies()}
 }
 
 // ServeHTTP routes requests.
@@ -126,7 +125,7 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 
 func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, path string) {
 	ctx := context.Background()
-	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
 		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -150,7 +149,7 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 
 func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path string) {
 	ctx := context.Background()
-	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
 		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -181,7 +180,7 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
-	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
 		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -251,7 +250,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := context.Background()
-	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
 		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -264,14 +263,20 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusNotFound, "not_found", "path \""+pathVal+"\" not found", nil, nil)
 		return
 	}
-	_, _ = rdb.Del(ctx, key).Result()
-	_ = core.ClearFileCache(ctx, rdb, pathVal)
+	if err := rdb.Del(ctx, key).Err(); err != nil {
+		requestLogger{}.Errorf("redis delete failed: %s (%v)", pathVal, err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	if err := h.deps.clearFileCache(ctx, rdb, pathVal); err != nil {
+		requestLogger{}.Warnf("clear file cache failed: %s (%v)", pathVal, err)
+	}
 
 	typ, content := storage.ParseStoredValue(stored)
 	if typ == "file" {
 		conf := h.Cfg.S3Config()
 		if conf.IsConfigured() {
-			if client, err := s3.NewClient(conf); err == nil {
+			if client, err := h.deps.newFileStore(conf); err == nil {
 				if err := client.DeleteObject(ctx, content); err != nil {
 					requestLogger{}.Errorf("s3 delete failed: %s (%v)", content, err)
 				}
@@ -341,7 +346,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	ctx := context.Background()
-	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
 		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -355,7 +360,9 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	if existing != "" && allowOverwrite {
-		_ = core.ClearFileCache(ctx, rdb, pathVal)
+		if err := h.deps.clearFileCache(ctx, rdb, pathVal); err != nil {
+			requestLogger{}.Warnf("clear file cache failed: %s (%v)", pathVal, err)
+		}
 	}
 
 	var ttlSeconds int64
@@ -366,7 +373,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	conf := h.Cfg.S3Config()
-	client, err := s3.NewClient(conf)
+	client, err := h.deps.newFileStore(conf)
 	if err != nil {
 		requestLogger{}.Errorf("s3 client init failed: %v", err)
 		utils.Error(w, http.StatusNotImplemented, "s3_not_configured", "S3 service is not configured", nil, nil)
@@ -400,10 +407,18 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		if err != nil || ttlMinutes < 1 {
 			ttlMinutes = 1
 		}
-		_ = rdb.SetEx(ctx, key, storedValue, time.Duration(ttlMinutes)*time.Minute).Err()
+		if err := rdb.SetEx(ctx, key, storedValue, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
+			requestLogger{}.Errorf("redis setex failed: %v", err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
 		expiresIn = ttlMinutes
 	} else {
-		_ = rdb.Set(ctx, key, storedValue, 0).Err()
+		if err := rdb.Set(ctx, key, storedValue, 0).Err(); err != nil {
+			requestLogger{}.Errorf("redis set failed: %v", err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
 	}
 
 	status := http.StatusCreated
@@ -499,7 +514,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	ctx := context.Background()
-	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
 		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -523,7 +538,9 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	if existing != "" && allowOverwrite {
-		_ = core.ClearFileCache(ctx, rdb, pathVal)
+		if err := h.deps.clearFileCache(ctx, rdb, pathVal); err != nil {
+			requestLogger{}.Warnf("clear file cache failed: %s (%v)", pathVal, err)
+		}
 	}
 
 	var expiresIn any = nil
@@ -535,11 +552,15 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		}
 		if err := rdb.SetEx(ctx, key, stored, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
 			requestLogger{}.Errorf("redis setex failed: %v", err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
 		}
 		expiresIn = ttlMinutes
 	} else {
 		if err := rdb.Set(ctx, key, stored, 0).Err(); err != nil {
 			requestLogger{}.Errorf("redis set failed: %v", err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
 		}
 	}
 
@@ -574,20 +595,20 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, obj
 		utils.Error(w, http.StatusNotImplemented, "s3_not_configured", "S3 service is not configured", nil, nil)
 		return
 	}
-	client, err := s3.NewClient(conf)
+	client, err := h.deps.newFileStore(conf)
 	if err != nil {
 		requestLogger{}.Errorf("s3 client init failed: %v", err)
 		utils.Error(w, http.StatusNotImplemented, "s3_not_configured", "S3 service is not configured", nil, nil)
 		return
 	}
 	ctx := context.Background()
-	rdb, err := redisx.GetClient(h.Cfg.RedisURL)
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
 		requestLogger{}.Errorf("redis connect failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	if cached, err := core.GetFileCache(ctx, rdb, pathVal); err == nil && cached != nil {
+	if cached, err := h.deps.getFileCache(ctx, rdb, pathVal); err == nil && cached != nil {
 		requestLogger{}.Infof("file cache hit: %s", pathVal)
 		utils.Binary(w, http.StatusOK, cached.Buffer, cached.ContentType, cached.ContentLength, true)
 		return
@@ -611,7 +632,7 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, obj
 		w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=86400")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.Copy(mw, obj)
-		_ = core.SetFileCache(ctx, rdb, pathVal, &core.FileCacheItem{
+		_ = h.deps.setFileCache(ctx, rdb, pathVal, &core.FileCacheItem{
 			Buffer:        buf.Bytes(),
 			ContentType:   info.ContentType,
 			ContentLength: info.Size,
