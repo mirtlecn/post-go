@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"post-go/internal/buildinfo"
 	"post-go/internal/httpapi"
 )
 
@@ -27,6 +28,13 @@ func main() {
 	}
 
 	addr := ":" + port
+	currentBuild := buildinfo.Current()
+	log.Printf(
+		"build: version=%s commit=%s built=%s",
+		currentBuild.Version,
+		currentBuild.Commit,
+		currentBuild.BuildDate,
+	)
 	log.Printf("env: PORT=%s LINKS_REDIS_URL=%s", port, h.Cfg.RedisURL)
 	fmt.Printf("\n✅  Server running at http://localhost:%s\n", port)
 	fmt.Print("    Press Ctrl+C to stop.\n\n")
