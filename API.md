@@ -191,6 +191,7 @@ Type behavior:
   - stores raw HTML
 - `type=md2html` or `convert=md2html`
   - converts Markdown to HTML before storing
+  - when `title` is present, generated HTML `<title>` uses stored `title`
 - `type=qrcode` or `convert=qrcode`
   - converts text to terminal QR code before storing
 - `type=topic` or `convert=topic`
@@ -526,10 +527,11 @@ Title fallback:
 - use stored `title` when present
 - otherwise use path without topic prefix
 
-Topic content page Markdown conversion:
+Markdown conversion:
 
-- topic Markdown items get:
+- all `md2html` content gets:
   - HTML `<title>` from stored `title`
+- topic Markdown items also get:
   - top backlink:
     - `Back to <topic>`
 

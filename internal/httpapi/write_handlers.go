@@ -186,9 +186,10 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 
 	switch typeInfo.InputType {
 	case "md2html":
-		options := convert.MarkdownOptions{}
+		options := convert.MarkdownOptions{
+			PageTitle: titleVal,
+		}
 		if resolvedPath.IsTopicItem {
-			options.PageTitle = titleVal
 			options.TopicBackLink = "/" + resolvedPath.TopicName
 			options.TopicBackLabel = resolvedPath.TopicName
 		}

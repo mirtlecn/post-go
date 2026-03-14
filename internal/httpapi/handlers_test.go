@@ -712,6 +712,27 @@ func TestHandleJSONCreateStoresTitleInJSONValue(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateMD2HTMLUsesTitleForHTMLTitle(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"# Hello","path":"note","type":"md2html","title":"Greeting"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != "html" {
+		t.Fatalf("expected stored html type, got %q", stored.Type)
+	}
+	if !strings.Contains(stored.Content, "<title>Greeting</title>") {
+		t.Fatalf("expected rendered html title, got %q", stored.Content)
+	}
+}
+
 func TestHandleFileUploadStoresTitleInJSONValue(t *testing.T) {
 	store := &fakeRedisStore{}
 	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}

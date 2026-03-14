@@ -83,7 +83,7 @@ pass "create md2html"
 MD_HTML="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-md")"
 assert_contains "$MD_HTML" "<article class=\"markdown-body\">" "rendered html shell"
 assert_contains "$MD_HTML" "<h1 id=\"title\">Title</h1>" "rendered markdown heading"
-assert_contains "$MD_HTML" "<title></title>" "rendered markdown title empty"
+assert_contains "$MD_HTML" "<title>Markdown Title</title>" "rendered markdown title"
 pass "rendered html"
 
 api_json POST "$POST_BASE_URL/" '{"url":"<p>hi</p>","path":"'"$SMOKE_PREFIX"'-html","type":"html"}'
@@ -143,7 +143,7 @@ pass "list items"
 api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-md"}' yes x-export true
 assert_status 200 "lookup html export"
 assert_jq '.type == "html"' "lookup html export type"
-assert_jq '.content | contains("<title></title>")' "lookup html export body"
+assert_jq '.content | contains("<title>Markdown Title</title>")' "lookup html export body"
 assert_jq '.title == "Markdown Title"' "lookup html export title"
 pass "lookup html export"
 
