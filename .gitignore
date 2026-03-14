@@ -12,3 +12,4 @@ coverage.out
 .env.*.local
 
 .DS_Store
+/tmp/
