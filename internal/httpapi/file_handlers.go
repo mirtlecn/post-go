@@ -85,13 +85,13 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		}
 	}
 	if exists, err := h.topicExists(ctx, rdb, pathVal); err == nil && exists {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "topic home must be managed with `type=topic`", nil, nil)
+		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
 		return
 	}
 	key := storage.LinksPrefix + pathVal
 	existing, _ := rdb.Get(ctx, key).Result()
 	if existing != "" && storage.ParseStoredValue(existing).Type == topicType {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "topic home must be managed with `type=topic`", nil, nil)
+		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
 		return
 	}
 	if existing != "" && !allowOverwrite {
@@ -143,28 +143,11 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Content: objectKey,
 		Title:   titleVal,
 	})
-	var expiresIn any
-	if ttlProvided {
-		if ttlMinutes == 0 {
-			if err := rdb.Set(ctx, key, storedValue, 0).Err(); err != nil {
-				h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
-				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-				return
-			}
-		} else {
-			if err := rdb.SetEx(ctx, key, storedValue, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
-				h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
-				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-				return
-			}
-			expiresIn = ttlMinutes
-		}
-	} else {
-		if err := rdb.Set(ctx, key, storedValue, 0).Err(); err != nil {
-			h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
-			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-			return
-		}
+	ttlResponse, err := setStoredValueWithTTL(ctx, rdb, key, storedValue, ttlMinutes, ttlProvided)
+	if err != nil {
+		h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
 	}
 
 	status := http.StatusCreated
@@ -177,7 +160,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Path:    pathVal,
 		Type:    "file",
 		Content: responseContent("file", objectKey, isExport),
-		TTL:     expiresIn,
+		TTL:     ttlResponse,
 	})
 	if resolvedPath.IsTopicItem {
 		if err := rdb.ZAdd(ctx, topicItemsKey(resolvedPath.TopicName), redis.Z{

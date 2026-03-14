@@ -51,7 +51,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		pathVal = resolvedPath.FullPath
 	}
 	if exists, err := h.topicExists(ctx, rdb, pathVal); err == nil && exists {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "topic home must be managed with `type=topic`", nil, nil)
+		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
 		return
 	}
 	key := storage.LinksPrefix + pathVal
@@ -166,7 +166,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	if exists, err := h.topicExists(ctx, rdb, pathVal); err == nil && exists {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "topic home must be managed with `type=topic`", nil, nil)
+		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
 		return
 	}
 	if typeInfo.InputType != "" && typeInfo.InputType != "url" && typeInfo.InputType != "text" && typeInfo.InputType != "html" && typeInfo.InputType != "md2html" && typeInfo.InputType != "qrcode" {
@@ -174,7 +174,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	if resolvedPath.ExistingTopic && pathVal == resolvedPath.TopicName {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "topic home must be managed with `type=topic`", nil, nil)
+		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
 		return
 	}
 	inputContent, ok := storage.MustString(body, "url")
@@ -257,28 +257,11 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		}
 	}
 
-	var expiresIn any
-	if ttlProvided {
-		if ttlMinutes == 0 {
-			if err := rdb.Set(ctx, key, stored, 0).Err(); err != nil {
-				requestLogger{}.Errorf("redis set failed: %v", err)
-				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-				return
-			}
-		} else {
-			if err := rdb.SetEx(ctx, key, stored, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
-				requestLogger{}.Errorf("redis setex failed: %v", err)
-				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-				return
-			}
-			expiresIn = ttlMinutes
-		}
-	} else {
-		if err := rdb.Set(ctx, key, stored, 0).Err(); err != nil {
-			requestLogger{}.Errorf("redis set failed: %v", err)
-			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-			return
-		}
+	ttlResponse, err := setStoredValueWithTTL(ctx, rdb, key, stored, ttlMinutes, ttlProvided)
+	if err != nil {
+		requestLogger{}.Errorf("redis write failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
 	}
 
 	result := CreateResponse{
@@ -286,7 +269,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		Path:    pathVal,
 		Type:    contentType,
 		Content: responseContent(contentType, inputContent, isExport),
-		TTL:     expiresIn,
+		TTL:     ttlResponse,
 	}
 	if existing != "" {
 		existingValue := storage.ParseStoredValue(existing)

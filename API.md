@@ -214,6 +214,7 @@ Rules:
 - topic does not support `ttl`
 - `path` is the topic name
 - topic home is stored at `surl:<topic>`
+- `topic:<topic>:items` is created lazily when the first topic item is indexed
 
 Topic create response:
 
@@ -469,6 +470,10 @@ Rules:
 ## Topic Index Rendering
 
 Topic home is generated from `topic:<topic>:items`.
+
+Notes:
+
+- the topic member zset may not exist yet for an empty topic
 
 Markdown shape:
 

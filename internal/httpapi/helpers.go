@@ -1,14 +1,18 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"post-go/internal/storage"
 )
+
+const topicHomeManagedError = "topic home must be managed with `type=topic`"
 
 func randomPath() string {
 	chars := "23456789abcdefghjkmnpqrstuvwxyz"
@@ -110,9 +114,18 @@ func parseTTLFormValue(ttlValue string) (int64, bool, error) {
 	return ttlMinutes, true, nil
 }
 
-func hasKey(m map[string]any, key string) bool {
-	_, ok := m[key]
-	return ok
+// setStoredValueWithTTL keeps omitted TTL and ttl=0 on the same persistent path.
+func setStoredValueWithTTL(ctx context.Context, rdb redisStore, key, storedValue string, ttlMinutes int64, ttlProvided bool) (any, error) {
+	if !ttlProvided || ttlMinutes == 0 {
+		if err := rdb.Set(ctx, key, storedValue, 0).Err(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if err := rdb.SetEx(ctx, key, storedValue, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
+		return nil, err
+	}
+	return ttlMinutes, nil
 }
 
 func isExportRequest(r *http.Request) bool {
