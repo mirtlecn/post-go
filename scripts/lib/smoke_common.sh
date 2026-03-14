@@ -47,6 +47,30 @@ redis_get() {
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" GET "$1"
 }
 
+redis_ttl() {
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" TTL "$1"
+}
+
+redis_type() {
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" TYPE "$1"
+}
+
+redis_exists() {
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" EXISTS "$1"
+}
+
+redis_zcard() {
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" ZCARD "$1"
+}
+
+redis_zscore() {
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" ZSCORE "$1" "$2"
+}
+
+redis_zrange() {
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" ZRANGE "$1" 0 -1
+}
+
 redis_flush() {
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" FLUSHDB >/dev/null
 }

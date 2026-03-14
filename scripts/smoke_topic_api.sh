@@ -133,4 +133,4 @@ assert_status 200 "lookup recreated topic"
 assert_jq '.content == "2"' "lookup recreated topic count"
 pass "lookup recreated topic"
 
-echo "Smoke PLAN3 checks completed successfully."
+echo "Topic API smoke checks completed successfully."

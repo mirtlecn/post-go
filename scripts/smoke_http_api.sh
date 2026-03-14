@@ -223,4 +223,4 @@ assert_jq '.deleted == "'"$SMOKE_PREFIX"'-conflict"' "delete existing path"
 assert_jq '.content == "updated"' "delete existing content"
 pass "delete existing"
 
-echo "Smoke API checks completed successfully."
+echo "HTTP API smoke checks completed successfully."

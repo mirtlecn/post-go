@@ -4,11 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/smoke_common.sh"
-MODULE_TMP_DIR="$(mktemp -d "$ROOT_DIR/tmp-plan2-XXXXXX")"
+MODULE_TMP_DIR="$(mktemp -d "$ROOT_DIR/tmp-render-smoke-XXXXXX")"
 trap 'rm -rf "$MODULE_TMP_DIR"; cleanup_smoke_tmp' EXIT
 
 TMP_GO="$MODULE_TMP_DIR/main.go"
-TMP_BIN="$(mktemp "$TMP_DIR/plan2-XXXXXX.bin")"
+TMP_BIN="$(mktemp "$TMP_DIR/render-smoke-XXXXXX.bin")"
 
 cat >"$TMP_GO" <<'EOF'
 package main
@@ -118,7 +118,7 @@ func main() {
 	mustContain("topic html title", indexHTML, "<title>Anime</title>")
 	pass("topic html title")
 
-	fmt.Println("Smoke PLAN2 checks completed successfully.")
+	fmt.Println("Render smoke checks completed successfully.")
 }
 EOF
 
