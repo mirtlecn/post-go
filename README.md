@@ -1,4 +1,4 @@
-[Vercel / Node.js / Web GUI](https://github.com/mirtlecn/post) | [CLI Client](https://github.com/mirtlecn/post-cli)
+[Vercel / Node.js / Web GUI](https://github.com/mirtlecn/post) | [CLI client](https://github.com/mirtlecn/post-cli) | [Skills for AI Agents](https://github.com/mirtlecn/post-cli/tree/master/skills)
 
 # Post-go — Lightweight File, Text & URL Sharing API
 
