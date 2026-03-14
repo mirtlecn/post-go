@@ -56,6 +56,7 @@ Used by:
 - authenticated single-item lookup
 - authenticated list items
 - authenticated topic lookup
+- authenticated topic list
 
 ```json
 {
@@ -214,7 +215,7 @@ Rules:
 - topic does not support `ttl`
 - `path` is the topic name
 - topic home is stored at `surl:<topic>`
-- `topic:<topic>:items` is created lazily when the first topic item is indexed
+- `topic:<topic>:items` is created when the topic is created
 
 Topic create response:
 
@@ -385,6 +386,20 @@ Notes:
   - `content = current member count as string`
   - `ttl = null`
 
+#### List all topics
+
+```json
+{
+  "type": "topic"
+}
+```
+
+Returns:
+
+- array of topic item responses
+- topic data is discovered by scanning `topic:*:items`
+- each item reuses the normal item response shape
+
 #### Lookup one item
 
 ```json
@@ -473,7 +488,7 @@ Topic home is generated from `topic:<topic>:items`.
 
 Notes:
 
-- the topic member zset may not exist yet for an empty topic
+- topic member zset exists even for an empty topic
 
 Markdown shape:
 

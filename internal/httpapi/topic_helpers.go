@@ -13,6 +13,7 @@ import (
 )
 
 const topicType = "topic"
+const topicPlaceholderMember = "__topic_placeholder__"
 
 type requestTypeInfo struct {
 	InputType string
@@ -48,6 +49,10 @@ func normalizeTypeAlias(body map[string]any) (requestTypeInfo, error) {
 
 func topicItemsKey(topicName string) string {
 	return "topic:" + topicName + ":items"
+}
+
+func topicNameFromItemsKey(key string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(key, "topic:"), ":items")
 }
 
 func (h *Handler) topicExists(ctx context.Context, rdb redisStore, topicName string) (bool, error) {
@@ -122,6 +127,9 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 		if !ok || member == "" {
 			continue
 		}
+		if member == topicPlaceholderMember {
+			continue
+		}
 		stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName+"/"+member).Result()
 		if err == redis.Nil {
 			continue
@@ -147,6 +155,24 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 		Content: html,
 		Title:   topicName,
 	}), 0).Err()
+}
+
+func ensureTopicItemsKey(ctx context.Context, rdb redisStore, topicName string) error {
+	return rdb.ZAdd(ctx, topicItemsKey(topicName), redis.Z{
+		Score:  0,
+		Member: topicPlaceholderMember,
+	}).Err()
+}
+
+func countTopicItems(ctx context.Context, rdb redisStore, topicName string) (int64, error) {
+	count, err := rdb.ZCard(ctx, topicItemsKey(topicName)).Result()
+	if err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		count--
+	}
+	return count, nil
 }
 
 func (h *Handler) adoptTopicItems(ctx context.Context, rdb redisStore, topicName string) error {

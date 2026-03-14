@@ -41,6 +41,8 @@ type fakeRedisStore struct {
 	zcardErr     error
 	zrangeResult []redis.Z
 	zrangeErr    error
+	zaddKeys     []string
+	zaddMembers  []redis.Z
 	lastSetKey   string
 	lastSetValue string
 	lastSetTTL   time.Duration
@@ -124,6 +126,8 @@ func (f *fakeRedisStore) TxPipeline() redis.Pipeliner {
 }
 
 func (f *fakeRedisStore) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
+	f.zaddKeys = append(f.zaddKeys, key)
+	f.zaddMembers = append(f.zaddMembers, members...)
 	return redis.NewIntResult(int64(len(members)), f.zaddErr)
 }
 
@@ -347,6 +351,9 @@ func TestHandleJSONCreateCreatesTopicHome(t *testing.T) {
 	if store.lastSetKey != "surl:anime" {
 		t.Fatalf("expected topic home to be stored, got %q", store.lastSetKey)
 	}
+	if len(store.zaddKeys) == 0 || store.zaddKeys[0] != "topic:anime:items" {
+		t.Fatalf("expected topic items key to be created, got %+v", store.zaddKeys)
+	}
 	stored := storage.ParseStoredValue(store.lastSetValue)
 	if stored.Type != topicType {
 		t.Fatalf("expected stored topic type, got %q", stored.Type)
@@ -404,7 +411,7 @@ func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 		getResults: map[string]fakeStringResult{
 			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
 		},
-		zcardResult: 3,
+		zcardResult: 4,
 	}
 	handler := newTestHandler(store)
 	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"anime","type":"topic"}`))
@@ -423,6 +430,38 @@ func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 	}
 	if body.Type != topicType || body.Content != "3" {
 		t.Fatalf("unexpected topic response: %+v", body)
+	}
+}
+
+func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"topic:anime:items", "topic:blog:items"},
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+			"surl:blog":  {value: `{"type":"topic","content":"<html></html>","title":"blog"}`},
+		},
+		zcardResult: 1,
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected topic list lookup to be handled")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body []ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body) != 2 {
+		t.Fatalf("expected 2 topics, got %+v", body)
+	}
+	if body[0].Type != topicType || body[1].Type != topicType {
+		t.Fatalf("unexpected topic list response: %+v", body)
 	}
 }
 

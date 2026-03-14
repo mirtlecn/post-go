@@ -326,11 +326,15 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
+	if err := ensureTopicItemsKey(ctx, rdb, topicName); err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
 	if err := h.rebuildTopicIndex(ctx, rdb, topicName); err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	count, err := rdb.ZCard(ctx, topicItemsKey(topicName)).Result()
+	count, err := countTopicItems(ctx, rdb, topicName)
 	if err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
@@ -359,7 +363,7 @@ func (h *Handler) handleTopicDelete(w http.ResponseWriter, r *http.Request, rdb 
 		utils.Error(w, http.StatusNotFound, "not_found", "path \""+topicName+"\" not found", nil, nil)
 		return
 	}
-	count, err := rdb.ZCard(ctx, topicItemsKey(topicName)).Result()
+	count, err := countTopicItems(ctx, rdb, topicName)
 	if err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return

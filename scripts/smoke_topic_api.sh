@@ -27,6 +27,16 @@ TOPIC_RAW="$(redis_get "surl:$TOPIC")"
 assert_contains "$TOPIC_RAW" '"type":"topic"' "topic stored type"
 pass "topic stored type"
 
+if [[ "$(redis_type "topic:$TOPIC:items")" != "zset" ]]; then
+  fail "topic items key exists" "type: $(redis_type "topic:$TOPIC:items")"
+fi
+pass "topic items key exists"
+
+api_json GET "$POST_BASE_URL/" '{"type":"topic"}'
+assert_status 200 "topic list"
+assert_jq 'map(.path) | index("'"$TOPIC"'") != null' "topic list contains created topic"
+pass "topic list"
+
 api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","convert":"topic"}'
 assert_status 200 "topic lookup"
 assert_jq '.type == "topic"' "topic lookup type"

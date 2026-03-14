@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 
 	"post-go/internal/storage"
@@ -17,14 +18,18 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body", nil, nil)
 		return true
 	}
-	pathVal, hasPath := storage.MustString(body, "path")
-	if !hasPath {
-		return false
-	}
 	typeInfo, err := normalizeTypeAlias(body)
 	if err != nil {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 		return true
+	}
+	pathVal, hasPath := storage.MustString(body, "path")
+	if typeInfo.InputType == topicType && !hasPath {
+		h.handleTopicListAuthed(w, r)
+		return true
+	}
+	if !hasPath {
+		return false
 	}
 	if pathVal == "" {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
@@ -56,7 +61,7 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
-	count, err := rdb.ZCard(ctx, topicItemsKey(topicName)).Result()
+	count, err := countTopicItems(ctx, rdb, topicName)
 	if err != nil {
 		requestLogger{}.Errorf("topic count failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -68,6 +73,59 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		Type:    topicType,
 		Content: topicCountString(count),
 	})
+}
+
+func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
+	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	var cursor uint64
+	var keys []string
+	for {
+		foundKeys, nextCursor, err := rdb.Scan(ctx, cursor, "topic:*:items", 100).Result()
+		if err != nil {
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
+		keys = append(keys, foundKeys...)
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	sort.Strings(keys)
+	topics := make([]ItemResponse, 0, len(keys))
+	domain := storage.GetDomain(r)
+	for _, key := range keys {
+		topicName := topicNameFromItemsKey(key)
+		if topicName == "" {
+			continue
+		}
+		stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName).Result()
+		if err != nil {
+			requestLogger{}.Warnf("topic list get failed: %s (%v)", topicName, err)
+			continue
+		}
+		if storage.ParseStoredValue(stored).Type != topicType {
+			continue
+		}
+		count, err := countTopicItems(ctx, rdb, topicName)
+		if err != nil {
+			requestLogger{}.Warnf("topic list count failed: %s (%v)", topicName, err)
+			continue
+		}
+		topics = append(topics, ItemResponse{
+			SURL:    domain + "/" + topicName,
+			Path:    topicName,
+			Type:    topicType,
+			Content: topicCountString(count),
+		})
+	}
+	utils.JSON(w, http.StatusOK, topics)
 }
 
 func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, path string) {
@@ -177,7 +235,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			ttl = &ttlMinutes
 		}
 		if storedValue.Type == topicType {
-			count, err := rdb.ZCard(ctx, topicItemsKey(path)).Result()
+			count, err := countTopicItems(ctx, rdb, path)
 			if err != nil {
 				requestLogger{}.Warnf("topic count failed: %s (%v)", path, err)
 				continue

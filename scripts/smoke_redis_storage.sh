@@ -46,8 +46,11 @@ TOPIC_VALUE="$(redis_get "surl:$TOPIC")"
 if ! jq -e '.type == "topic"' >/dev/null <<<"$TOPIC_VALUE"; then
   fail "redis topic home type" "value: $TOPIC_VALUE"
 fi
-if [[ "$(redis_exists "topic:$TOPIC:items")" != "0" ]]; then
-  fail "redis topic zset init" "expected no zset key before first item"
+if [[ "$(redis_type "topic:$TOPIC:items")" != "zset" ]]; then
+  fail "redis topic zset init type" "type: $(redis_type "topic:$TOPIC:items")"
+fi
+if [[ "$(redis_zcard "topic:$TOPIC:items")" != "1" ]]; then
+  fail "redis topic zset init count" "zcard: $(redis_zcard "topic:$TOPIC:items")"
 fi
 pass "redis topic init"
 
@@ -57,13 +60,13 @@ ITEM_VALUE="$(redis_get "surl:$TOPIC/entry")"
 if ! jq -e '.type == "html" and .title == "Entry Title" and (.content | contains("<title>Entry Title</title>"))' >/dev/null <<<"$ITEM_VALUE"; then
   fail "redis topic item json" "value: $ITEM_VALUE"
 fi
-if [[ "$(redis_zcard "topic:$TOPIC:items")" != "1" ]]; then
+if [[ "$(redis_zcard "topic:$TOPIC:items")" != "2" ]]; then
   fail "redis topic zset count after create" "zcard: $(redis_zcard "topic:$TOPIC:items")"
 fi
 if [[ "$(redis_type "topic:$TOPIC:items")" != "zset" ]]; then
   fail "redis topic zset type after create" "type: $(redis_type "topic:$TOPIC:items")"
 fi
-if [[ "$(redis_zrange "topic:$TOPIC:items")" != "entry" ]]; then
+if [[ "$(redis_zrange "topic:$TOPIC:items")" != $'__topic_placeholder__\nentry' ]]; then
   fail "redis topic zset member" "members: $(redis_zrange "topic:$TOPIC:items")"
 fi
 SCORE_BEFORE="$(redis_zscore "topic:$TOPIC:items" "entry")"
@@ -90,14 +93,14 @@ assert_status 200 "delete topic item"
 if [[ "$(redis_exists "surl:$TOPIC/entry")" != "0" ]]; then
   fail "redis topic item delete key" "exists: $(redis_exists "surl:$TOPIC/entry")"
 fi
-if [[ "$(redis_zcard "topic:$TOPIC:items")" != "0" ]]; then
+if [[ "$(redis_zcard "topic:$TOPIC:items")" != "1" ]]; then
   fail "redis topic item delete zset" "zcard: $(redis_zcard "topic:$TOPIC:items")"
 fi
 pass "redis topic item delete"
 
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/orphan","url":"hello orphan","type":"text"}'
 assert_status 201 "create orphan candidate"
-if [[ "$(redis_zcard "topic:$TOPIC:items")" != "1" ]]; then
+if [[ "$(redis_zcard "topic:$TOPIC:items")" != "2" ]]; then
   fail "redis orphan candidate indexed" "zcard: $(redis_zcard "topic:$TOPIC:items")"
 fi
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
