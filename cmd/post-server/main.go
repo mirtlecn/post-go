@@ -21,13 +21,6 @@ func main() {
 	}
 
 	h := httpapi.NewHandler()
-	if h.Cfg.SecretKey == "" || h.Cfg.RedisURL == "" {
-		fmt.Println("Error: Missing required environment variables: LINKS_REDIS_URL, SECRET_KEY")
-		fmt.Println("Please create a .env.local file. See .env.example for reference.")
-		os.Exit(1)
-	}
-
-	addr := ":" + port
 	currentBuild := buildinfo.Current()
 	log.Printf(
 		"build: version=%s commit=%s built=%s",
@@ -35,6 +28,13 @@ func main() {
 		currentBuild.Commit,
 		currentBuild.BuildDate,
 	)
+	if h.Cfg.SecretKey == "" || h.Cfg.RedisURL == "" {
+		fmt.Println("Error: Missing required environment variables: LINKS_REDIS_URL, SECRET_KEY")
+		fmt.Println("Please create a .env.local file. See .env.example for reference.")
+		os.Exit(1)
+	}
+
+	addr := ":" + port
 	log.Printf("env: PORT=%s LINKS_REDIS_URL=%s", port, h.Cfg.RedisURL)
 	fmt.Printf("\n✅  Server running at http://localhost:%s\n", port)
 	fmt.Print("    Press Ctrl+C to stop.\n\n")

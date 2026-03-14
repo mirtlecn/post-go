@@ -1,66 +1,32 @@
-name: Release
+name: release
 
 on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  goreleaser:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            ext: ""
-            archive: tar.gz
-          - goos: darwin
-            goarch: arm64
-            ext: ""
-            archive: tar.gz
-          - goos: windows
-            goarch: amd64
-            ext: ".exe"
-            archive: zip
-
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - name: Build
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          export CGO_ENABLED=0
-          export GOOS="${{ matrix.goos }}"
-          export GOARCH="${{ matrix.goarch }}"
-          BIN_NAME="post-server${{ matrix.ext }}"
-          OUT="dist/${BIN_NAME}"
-          go build -trimpath -ldflags "-s -w" -o "${OUT}" ./cmd/post-server
-          if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            (cd dist && zip -q "post-server_${GOOS}_${GOARCH}.zip" "${BIN_NAME}")
-          else
-            (cd dist && tar -czf "post-server_${GOOS}_${GOARCH}.tar.gz" "${BIN_NAME}")
-          fi
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
         with:
-          name: post-server_${{ matrix.goos }}_${{ matrix.goarch }}
-          path: dist/post-server_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
-
-      # - name: Publish Release
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     files: |
-      #       dist/post-server_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

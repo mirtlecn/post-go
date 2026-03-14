@@ -1,0 +1,47 @@
+version: 2
+
+project_name: post-server
+
+before:
+  hooks:
+    - go test ./...
+
+builds:
+  - id: post-server
+    main: ./cmd/post-server
+    binary: post-server
+    flags:
+      - -trimpath
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X post-go/internal/buildinfo.Version={{ .Version }}
+      - -X post-go/internal/buildinfo.Commit={{ .Commit }}
+      - -X post-go/internal/buildinfo.BuildDate={{ .Date }}
+
+archives:
+  - id: default
+    ids:
+      - post-server
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true
