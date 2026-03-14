@@ -128,10 +128,10 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 		return
 	}
-	var ttlMinutes int64
-	ttlProvided := hasKey(body, "ttl")
-	if v, ok := storage.MustInt(body, "ttl"); ok {
-		ttlMinutes = v
+	ttlMinutes, ttlProvided, err := parseTTLValue(body["ttl"])
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
 	}
 
 	ctx := context.Background()
@@ -258,18 +258,21 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	var expiresIn any
-	var ttlWarning any
 	if ttlProvided {
-		if ttlMinutes < 1 {
-			ttlMinutes = 1
-			ttlWarning = "invalid ttl, fallback to 1 minute"
+		if ttlMinutes == 0 {
+			if err := rdb.Set(ctx, key, stored, 0).Err(); err != nil {
+				requestLogger{}.Errorf("redis set failed: %v", err)
+				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+				return
+			}
+		} else {
+			if err := rdb.SetEx(ctx, key, stored, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
+				requestLogger{}.Errorf("redis setex failed: %v", err)
+				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+				return
+			}
+			expiresIn = ttlMinutes
 		}
-		if err := rdb.SetEx(ctx, key, stored, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
-			requestLogger{}.Errorf("redis setex failed: %v", err)
-			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-			return
-		}
-		expiresIn = ttlMinutes
 	} else {
 		if err := rdb.Set(ctx, key, stored, 0).Err(); err != nil {
 			requestLogger{}.Errorf("redis set failed: %v", err)
@@ -288,11 +291,6 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	if existing != "" {
 		existingValue := storage.ParseStoredValue(existing)
 		result.Overwritten = responseContent(existingValue.Type, existingValue.Content, isExport)
-	}
-	if ttlWarning != nil {
-		if s, ok := ttlWarning.(string); ok {
-			result.Warning = s
-		}
 	}
 
 	status := http.StatusCreated

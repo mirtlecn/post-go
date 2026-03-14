@@ -110,10 +110,20 @@ assert_jq '.overwritten == "first"' "overwrite existing body"
 pass "overwrite existing"
 
 api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl","ttl":0}'
-assert_status 201 "ttl fallback"
-assert_jq '.expires_in == 1' "ttl fallback minutes"
-assert_jq '.warning == "invalid ttl, fallback to 1 minute"' "ttl fallback warning"
-pass "ttl fallback"
+assert_status 201 "ttl zero means infinite"
+assert_jq '.expires_in == null' "ttl zero means no expiration"
+assert_jq '.warning == null or .warning == ""' "ttl zero no warning"
+pass "ttl zero means infinite"
+
+api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-decimal","ttl":1.5}'
+assert_status 400 "ttl decimal rejected"
+assert_jq '.error == "`ttl` must be a natural number"' "ttl decimal rejected message"
+pass "ttl decimal rejected"
+
+api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-string","ttl":"10"}'
+assert_status 400 "ttl string rejected"
+assert_jq '.error == "`ttl` must be a natural number"' "ttl string rejected message"
+pass "ttl string rejected"
 
 api_json GET "$POST_BASE_URL/" ''
 assert_status 200 "list items"
@@ -154,6 +164,42 @@ FILE_EXT_VALUE="$(redis_get "surl:$SMOKE_PREFIX-file.txt")"
 assert_contains "$FILE_EXT_VALUE" '"type":"file"' "redis file json type"
 assert_contains "$FILE_EXT_VALUE" '"title":"Upload Attachment"' "redis file title"
 pass "file upload"
+
+FILE_ZERO_BODY="$TMP_DIR/file-zero.body"
+FILE_ZERO_STATUS="$TMP_DIR/file-zero.status"
+curl -sS -o "$FILE_ZERO_BODY" -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "file=@$FILE_PATH;type=text/plain" \
+  -F "path=$SMOKE_PREFIX-file-zero" \
+  -F "ttl=0" \
+  "$POST_BASE_URL/" >"$FILE_ZERO_STATUS"
+FILE_ZERO_HTTP_STATUS="$(cat "$FILE_ZERO_STATUS")"
+FILE_ZERO_HTTP_BODY="$(cat "$FILE_ZERO_BODY")"
+if [[ "$FILE_ZERO_HTTP_STATUS" != "201" ]]; then
+  fail "file upload ttl zero" "expected HTTP 201, got $FILE_ZERO_HTTP_STATUS, body: $FILE_ZERO_HTTP_BODY"
+fi
+if ! jq -e '.expires_in == null' >/dev/null <<<"$FILE_ZERO_HTTP_BODY"; then
+  fail "file upload ttl zero expires_in" "body: $FILE_ZERO_HTTP_BODY"
+fi
+pass "file upload ttl zero"
+
+FILE_BAD_TTL_BODY="$TMP_DIR/file-bad-ttl.body"
+FILE_BAD_TTL_STATUS="$TMP_DIR/file-bad-ttl.status"
+curl -sS -o "$FILE_BAD_TTL_BODY" -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "file=@$FILE_PATH;type=text/plain" \
+  -F "path=$SMOKE_PREFIX-file-bad-ttl" \
+  -F "ttl=1.5" \
+  "$POST_BASE_URL/" >"$FILE_BAD_TTL_STATUS"
+if [[ "$(cat "$FILE_BAD_TTL_STATUS")" != "400" ]]; then
+  fail "file upload bad ttl" "body: $(cat "$FILE_BAD_TTL_BODY")"
+fi
+if ! jq -e '.error == "`ttl` must be a natural number"' >/dev/null <<<"$(cat "$FILE_BAD_TTL_BODY")"; then
+  fail "file upload bad ttl message" "body: $(cat "$FILE_BAD_TTL_BODY")"
+fi
+pass "file upload bad ttl"
 
 FILE_PUBLIC="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file.txt")"
 assert_contains "$FILE_PUBLIC" "upload-body" "public file read"

@@ -56,6 +56,7 @@ type fakeStringResult struct {
 type fakeFileStore struct {
 	uploadObjectKey string
 	uploadErr       error
+	lastUploadTTL   int64
 	deleteErr       error
 	deleteCalls     []string
 }
@@ -139,6 +140,7 @@ func (f *fakeRedisStore) ZCard(ctx context.Context, key string) *redis.IntCmd {
 }
 
 func (f *fakeFileStore) UploadFile(ctx context.Context, filename string, size int64, contentType string, reader io.Reader, ttlSeconds int64) (string, error) {
+	f.lastUploadTTL = ttlSeconds
 	if f.uploadErr != nil {
 		return "", f.uploadErr
 	}
@@ -192,6 +194,69 @@ func TestHandleJSONCreateStoresValueOnSuccess(t *testing.T) {
 	expected := `{"type":"text","content":"hello"}`
 	if store.lastSetValue != expected {
 		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
+	}
+}
+
+func TestHandleJSONCreateStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","ttl":0}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if store.lastSetTTL != 0 {
+		t.Fatalf("expected no expiration, got %v", store.lastSetTTL)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.ExpiresIn != nil {
+		t.Fatalf("expected expires_in to be null, got %+v", body.ExpiresIn)
+	}
+	if body.Warning != "" {
+		t.Fatalf("expected no warning, got %q", body.Warning)
+	}
+}
+
+func TestHandleJSONCreateRejectsNonNaturalTTL(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","ttl":1.5}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`ttl` must be a natural number" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
+func TestHandleJSONCreateRejectsStringTTL(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","ttl":"10"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`ttl` must be a natural number" {
+		t.Fatalf("unexpected error payload: %+v", body)
 	}
 }
 
@@ -458,6 +523,51 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	}
 	if len(fileStore.deleteCalls) != 0 {
 		t.Fatalf("expected no compensation delete, got %+v", fileStore.deleteCalls)
+	}
+}
+
+func TestHandleFileUploadStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"path": "note", "ttl": "0"}, "note.txt", "hello")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if store.lastSetTTL != 0 {
+		t.Fatalf("expected no expiration, got %v", store.lastSetTTL)
+	}
+	if fileStore.lastUploadTTL != 0 {
+		t.Fatalf("expected upload ttlSeconds 0, got %d", fileStore.lastUploadTTL)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.ExpiresIn != nil {
+		t.Fatalf("expected expires_in to be null, got %+v", body.ExpiresIn)
+	}
+}
+
+func TestHandleFileUploadRejectsNonNaturalTTL(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"path": "note", "ttl": "1.5"}, "note.txt", "hello")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`ttl` must be a natural number" {
+		t.Fatalf("unexpected error payload: %+v", body)
 	}
 }
 

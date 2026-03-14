@@ -83,7 +83,9 @@ func ParseJSONBody(r *http.Request) (map[string]any, error) {
 		return map[string]any{}, nil
 	}
 	var out map[string]any
-	if err := json.Unmarshal(body, &out); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -112,8 +114,6 @@ func MustInt(m map[string]any, key string) (int64, bool) {
 			return 0, false
 		}
 		return i, true
-	case float64:
-		return int64(t), true
 	case int64:
 		return t, true
 	case int:

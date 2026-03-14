@@ -36,6 +36,12 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	ttlVal := r.FormValue("ttl")
 	titleVal := r.FormValue("title")
 	topicVal := r.FormValue("topic")
+	var ttlMinutes int64
+	ttlMinutes, ttlProvided, err := parseTTLFormValue(ttlVal)
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
+	}
 
 	if r.Method == http.MethodPut && pathVal == "" {
 		requestLogger{}.Warnf("file upload PUT missing path")
@@ -100,10 +106,8 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	var ttlSeconds int64
-	if ttlVal != "" {
-		if ttlMin, err := parseInt64(ttlVal); err == nil {
-			ttlSeconds = ttlMin * 60
-		}
+	if ttlProvided && ttlMinutes > 0 {
+		ttlSeconds = ttlMinutes * 60
 	}
 
 	conf := h.Cfg.S3Config()
@@ -140,17 +144,21 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Title:   titleVal,
 	})
 	var expiresIn any
-	if ttlVal != "" {
-		ttlMinutes, err := parseInt64(ttlVal)
-		if err != nil || ttlMinutes < 1 {
-			ttlMinutes = 1
+	if ttlProvided {
+		if ttlMinutes == 0 {
+			if err := rdb.Set(ctx, key, storedValue, 0).Err(); err != nil {
+				h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
+				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+				return
+			}
+		} else {
+			if err := rdb.SetEx(ctx, key, storedValue, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
+				h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
+				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+				return
+			}
+			expiresIn = ttlMinutes
 		}
-		if err := rdb.SetEx(ctx, key, storedValue, time.Duration(ttlMinutes)*time.Minute).Err(); err != nil {
-			h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
-			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-			return
-		}
-		expiresIn = ttlMinutes
 	} else {
 		if err := rdb.Set(ctx, key, storedValue, 0).Err(); err != nil {
 			h.handleUploadPersistenceFailure(ctx, client, objectKey, err)

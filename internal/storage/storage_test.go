@@ -1,6 +1,11 @@
 package storage
 
-import "testing"
+import (
+	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestBuildStoredValueMarshalsJSON(t *testing.T) {
 	stored := BuildStoredValue(StoredValue{
@@ -40,5 +45,25 @@ func TestParseStoredValueFallsBackToTextForInvalidJSON(t *testing.T) {
 	}
 	if value.Title != "" {
 		t.Fatalf("expected empty title, got %q", value.Title)
+	}
+}
+
+func TestParseJSONBodyPreservesJSONNumber(t *testing.T) {
+	request := httptest.NewRequest("POST", "/", strings.NewReader(`{"ttl":1}`))
+
+	body, err := ParseJSONBody(request)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if _, ok := body["ttl"].(json.Number); !ok {
+		t.Fatalf("expected json.Number, got %T", body["ttl"])
+	}
+}
+
+func TestMustIntRejectsDecimalJSONNumber(t *testing.T) {
+	value, ok := MustInt(map[string]any{"ttl": json.Number("1.5")}, "ttl")
+
+	if ok {
+		t.Fatalf("expected decimal json number to be rejected, got %d", value)
 	}
 }

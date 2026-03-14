@@ -75,6 +75,41 @@ func parseInt64(s string) (int64, error) {
 	return n, nil
 }
 
+func parseTTLValue(ttlValue any) (int64, bool, error) {
+	if ttlValue == nil {
+		return 0, false, nil
+	}
+	switch value := ttlValue.(type) {
+	case int64:
+		if value < 0 {
+			return 0, true, errors.New("`ttl` must be a natural number")
+		}
+		return value, true, nil
+	case int:
+		if value < 0 {
+			return 0, true, errors.New("`ttl` must be a natural number")
+		}
+		return int64(value), true, nil
+	default:
+		ttlMinutes, ok := storage.MustInt(map[string]any{"ttl": ttlValue}, "ttl")
+		if !ok || ttlMinutes < 0 {
+			return 0, true, errors.New("`ttl` must be a natural number")
+		}
+		return ttlMinutes, true, nil
+	}
+}
+
+func parseTTLFormValue(ttlValue string) (int64, bool, error) {
+	if ttlValue == "" {
+		return 0, false, nil
+	}
+	ttlMinutes, err := parseInt64(ttlValue)
+	if err != nil {
+		return 0, true, errors.New("`ttl` must be a natural number")
+	}
+	return ttlMinutes, true, nil
+}
+
 func hasKey(m map[string]any, key string) bool {
 	_, ok := m[key]
 	return ok

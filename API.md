@@ -84,8 +84,7 @@ Fields:
   "type": "text",
   "content": "hello",
   "expires_in": 10,
-  "overwritten": "old value",
-  "warning": "invalid ttl, fallback to 1 minute"
+  "overwritten": "old value"
 }
 ```
 
@@ -97,7 +96,6 @@ Fields:
 - `content: string`
 - `expires_in: number | null`
 - `overwritten: string` optional
-- `warning: string` optional
 
 ### Delete response
 
@@ -197,9 +195,9 @@ Regular item path rules:
 TTL rules:
 
 - item TTL is in minutes
-- `ttl < 1` is accepted and normalized to `1`
-- warning:
-  - `"invalid ttl, fallback to 1 minute"`
+- `ttl` must be a natural number (`>= 0`)
+- `ttl = 0` means no expiration
+- invalid values return `400 invalid_request`
 
 #### Topic creation body
 
@@ -274,7 +272,7 @@ Fields:
 - `file` required
 - `path` optional
 - `title` optional
-- `ttl` optional
+- `ttl` optional, natural number in minutes
 - `topic` optional
 
 Example:
@@ -293,6 +291,8 @@ Rules:
 
 - file uploads require configured S3-compatible storage
 - if `path` has no extension, uploaded file extension is appended
+- `ttl` must be a natural number (`>= 0`)
+- `ttl = 0` means no expiration
 - if `topic` is present, final path becomes `<topic>/<path>`
 - if full path starts with an existing topic prefix, it is treated as a topic item
 
