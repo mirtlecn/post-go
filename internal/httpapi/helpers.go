@@ -139,6 +139,17 @@ func responseContent(typ, content string, isExport bool) string {
 	return storage.PreviewContent(typ, content)
 }
 
+func buildItemResponse(domain, path string, storedValue storage.StoredValue, ttl *int64, isExport bool) ItemResponse {
+	return ItemResponse{
+		SURL:    domain + "/" + path,
+		Path:    path,
+		Type:    storedValue.Type,
+		Title:   storedValue.Title,
+		TTL:     ttl,
+		Content: responseContent(storedValue.Type, storedValue.Content, isExport),
+	}
+}
+
 func itoa(v int) string {
 	if v == 0 {
 		return "0"

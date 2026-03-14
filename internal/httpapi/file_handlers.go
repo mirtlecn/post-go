@@ -159,6 +159,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		SURL:    storage.GetDomain(r) + "/" + pathVal,
 		Path:    pathVal,
 		Type:    "file",
+		Title:   titleVal,
 		Content: responseContent("file", objectKey, isExport),
 		TTL:     ttlResponse,
 	})

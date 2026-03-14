@@ -63,6 +63,7 @@ Used by:
   "surl": "http://host/path",
   "path": "path",
   "type": "text",
+  "title": "Greeting",
   "ttl": 10,
   "content": "hello"
 }
@@ -73,8 +74,14 @@ Fields:
 - `surl: string`
 - `path: string`
 - `type: string`
+- `title: string`
 - `ttl: number | null`
 - `content: string`
+
+Rules:
+
+- successful JSON responses always include `title`
+- when the stored value has no title, the API returns `""`
 
 ### Create / update response
 
@@ -83,6 +90,7 @@ Fields:
   "surl": "http://host/path",
   "path": "path",
   "type": "text",
+  "title": "Greeting",
   "content": "hello",
   "ttl": 10,
   "overwritten": "old value"
@@ -94,6 +102,7 @@ Fields:
 - `surl: string`
 - `path: string`
 - `type: string`
+- `title: string`
 - `content: string`
 - `ttl: number | null`
 - `overwritten: string` optional
@@ -104,6 +113,7 @@ Fields:
 {
   "deleted": "path",
   "type": "text",
+  "title": "Greeting",
   "content": "hello"
 }
 ```
@@ -112,6 +122,7 @@ Fields:
 
 - `deleted: string`
 - `type: string`
+- `title: string`
 - `content: string`
 
 ### Error response
@@ -224,6 +235,7 @@ Topic create response:
   "surl": "http://host/anime",
   "path": "anime",
   "type": "topic",
+  "title": "anime",
   "content": "0",
   "ttl": null
 }
@@ -383,6 +395,7 @@ Notes:
 - topics are included in the list
 - for topic entries:
   - `type = "topic"`
+  - `title = stored topic title`
   - `content = current member count as string`
   - `ttl = null`
 
@@ -399,6 +412,7 @@ Returns:
 - array of topic item responses
 - topic data is discovered by scanning `topic:*:items`
 - each item reuses the normal item response shape
+- topic `title` is read from stored `surl:<topic>`
 
 #### Lookup one item
 
@@ -435,6 +449,7 @@ Returns:
   "surl": "http://host/anime",
   "path": "anime",
   "type": "topic",
+  "title": "anime",
   "ttl": null,
   "content": "2"
 }

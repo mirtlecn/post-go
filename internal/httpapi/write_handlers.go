@@ -86,6 +86,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	utils.JSON(w, http.StatusOK, DeleteResponse{
 		Deleted: pathVal,
 		Type:    storedValue.Type,
+		Title:   storedValue.Title,
 		Content: responseContent(storedValue.Type, storedValue.Content, isExport),
 	})
 	if resolvedPath.IsTopicItem {
@@ -241,12 +242,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	if existing != "" && !allowOverwrite {
 		existingValue := storage.ParseStoredValue(existing)
 		details := map[string]any{
-			"existing": ItemResponse{
-				SURL:    storage.GetDomain(r) + "/" + pathVal,
-				Path:    pathVal,
-				Type:    existingValue.Type,
-				Content: responseContent(existingValue.Type, existingValue.Content, isExport),
-			},
+			"existing": buildItemResponse(storage.GetDomain(r), pathVal, existingValue, nil, isExport),
 		}
 		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use PUT to overwrite", details)
 		return
@@ -268,6 +264,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		SURL:    storage.GetDomain(r) + "/" + pathVal,
 		Path:    pathVal,
 		Type:    contentType,
+		Title:   titleVal,
 		Content: responseContent(contentType, inputContent, isExport),
 		TTL:     ttlResponse,
 	}
@@ -347,6 +344,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		SURL:    storage.GetDomain(r) + "/" + topicName,
 		Path:    topicName,
 		Type:    topicType,
+		Title:   topicName,
 		Content: topicCountString(count),
 		TTL:     nil,
 	})
@@ -363,6 +361,12 @@ func (h *Handler) handleTopicDelete(w http.ResponseWriter, r *http.Request, rdb 
 		utils.Error(w, http.StatusNotFound, "not_found", "path \""+topicName+"\" not found", nil, nil)
 		return
 	}
+	stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName).Result()
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	storedValue := storage.ParseStoredValue(stored)
 	count, err := countTopicItems(ctx, rdb, topicName)
 	if err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -375,6 +379,7 @@ func (h *Handler) handleTopicDelete(w http.ResponseWriter, r *http.Request, rdb 
 	utils.JSON(w, http.StatusOK, DeleteResponse{
 		Deleted: topicName,
 		Type:    topicType,
+		Title:   storedValue.Title,
 		Content: topicCountString(count),
 	})
 }

@@ -6,6 +6,7 @@ type ItemResponse struct {
 	SURL    string `json:"surl"`
 	Path    string `json:"path"`
 	Type    string `json:"type"`
+	Title   string `json:"title"`
 	TTL     *int64 `json:"ttl"`
 	Content string `json:"content"`
 }
@@ -14,6 +15,7 @@ type CreateResponse struct {
 	SURL        string `json:"surl"`
 	Path        string `json:"path"`
 	Type        string `json:"type"`
+	Title       string `json:"title"`
 	Content     string `json:"content"`
 	TTL         any    `json:"ttl"`
 	Overwritten string `json:"overwritten,omitempty"`
@@ -23,5 +25,6 @@ type CreateResponse struct {
 type DeleteResponse struct {
 	Deleted string `json:"deleted"`
 	Type    string `json:"type"`
+	Title   string `json:"title"`
 	Content string `json:"content"`
 }

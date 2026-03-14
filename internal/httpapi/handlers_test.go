@@ -199,6 +199,13 @@ func TestHandleJSONCreateStoresValueOnSuccess(t *testing.T) {
 	if store.lastSetValue != expected {
 		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
 	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Title != "" {
+		t.Fatalf("expected empty title, got %q", body.Title)
+	}
 }
 
 func TestHandleJSONCreateStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
@@ -406,6 +413,39 @@ func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateConflictIncludesExistingTitle(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"updated","path":"note"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d", response.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	details, ok := body["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected details map, got %#v", body["details"])
+	}
+	existing, ok := details["existing"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected existing map, got %#v", details["existing"])
+	}
+	if existing["title"] != "Greeting" {
+		t.Fatalf("expected existing title Greeting, got %#v", existing["title"])
+	}
+}
+
 func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -430,6 +470,9 @@ func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 	}
 	if body.Type != topicType || body.Content != "3" {
 		t.Fatalf("unexpected topic response: %+v", body)
+	}
+	if body.Title != "anime" {
+		t.Fatalf("expected topic title anime, got %+v", body)
 	}
 }
 
@@ -462,6 +505,9 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	}
 	if body[0].Type != topicType || body[1].Type != topicType {
 		t.Fatalf("unexpected topic list response: %+v", body)
+	}
+	if body[0].Title == "" || body[1].Title == "" {
+		t.Fatalf("expected topic titles, got %+v", body)
 	}
 }
 
@@ -509,7 +555,7 @@ func TestHandleDeleteReturnsInternalErrorWhenRedisDeleteFails(t *testing.T) {
 func TestHandleDeleteReturnsSuccessAfterRedisDelete(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:note": {value: `{"type":"text","content":"hello"}`},
+			"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting"}`},
 		},
 	}
 	handler := newTestHandler(store)
@@ -521,6 +567,13 @@ func TestHandleDeleteReturnsSuccessAfterRedisDelete(t *testing.T) {
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body DeleteResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Title != "Greeting" {
+		t.Fatalf("expected delete title Greeting, got %+v", body)
 	}
 }
 
@@ -562,6 +615,13 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	}
 	if len(fileStore.deleteCalls) != 0 {
 		t.Fatalf("expected no compensation delete, got %+v", fileStore.deleteCalls)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Title != "" {
+		t.Fatalf("expected empty title, got %q", body.Title)
 	}
 }
 
@@ -643,6 +703,13 @@ func TestHandleJSONCreateStoresTitleInJSONValue(t *testing.T) {
 	if store.lastSetValue != expected {
 		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
 	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Title != "Greeting" {
+		t.Fatalf("expected create title Greeting, got %+v", body)
+	}
 }
 
 func TestHandleFileUploadStoresTitleInJSONValue(t *testing.T) {
@@ -660,6 +727,13 @@ func TestHandleFileUploadStoresTitleInJSONValue(t *testing.T) {
 	expected := `{"type":"file","content":"post/default/uploaded.txt","title":"Attachment"}`
 	if store.lastSetValue != expected {
 		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Title != "Attachment" {
+		t.Fatalf("expected create title Attachment, got %+v", body)
 	}
 }
 

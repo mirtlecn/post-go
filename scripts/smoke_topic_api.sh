@@ -21,6 +21,7 @@ api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","convert":"topic"}'
 assert_status 201 "create topic via alias"
 assert_jq '.type == "topic"' "create topic type"
 assert_jq '.content == "0"' "create topic count"
+assert_jq '.title == "'"$TOPIC"'"' "create topic title"
 pass "create topic via alias"
 
 TOPIC_RAW="$(redis_get "surl:$TOPIC")"
@@ -35,12 +36,14 @@ pass "topic items key exists"
 api_json GET "$POST_BASE_URL/" '{"type":"topic"}'
 assert_status 200 "topic list"
 assert_jq 'map(.path) | index("'"$TOPIC"'") != null' "topic list contains created topic"
+assert_jq 'map(select(.path == "'"$TOPIC"'"))[0].title == "'"$TOPIC"'"' "topic list title"
 pass "topic list"
 
 api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","convert":"topic"}'
 assert_status 200 "topic lookup"
 assert_jq '.type == "topic"' "topic lookup type"
 assert_jq '.content == "0"' "topic lookup count"
+assert_jq '.title == "'"$TOPIC"'"' "topic lookup title"
 pass "topic lookup"
 
 TOPIC_HOME="$(curl -sS "$POST_BASE_URL/$TOPIC")"
@@ -70,6 +73,7 @@ pass "reject mismatched topic path"
 api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC"'","path":"castle-notes","url":"# Castle\n\nHello","type":"md2html","title":"Castle Notes"}'
 assert_status 201 "create topic item via topic"
 assert_jq '.path == "'"$TOPIC"'/castle-notes"' "topic path rewrite"
+assert_jq '.title == "Castle Notes"' "create topic item title"
 pass "create topic item via topic"
 
 ITEM_HTML="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes")"
@@ -79,6 +83,7 @@ pass "topic item render"
 
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/screening-signup","url":"https://example.com/screening","type":"url"}'
 assert_status 201 "create topic item via full path"
+assert_jq '.title == ""' "create topic item full path empty title"
 pass "create topic item via full path"
 
 FILE_PATH="$TMP_DIR/topic-upload.txt"
@@ -95,6 +100,9 @@ curl -sS -o "$FILE_BODY" -w "%{http_code}" \
   "$POST_BASE_URL/" >"$FILE_STATUS"
 if [[ "$(cat "$FILE_STATUS")" != "201" ]]; then
   fail "topic file upload" "body: $(cat "$FILE_BODY")"
+fi
+if ! jq -e '.title == "Asset File"' >/dev/null <<<"$(cat "$FILE_BODY")"; then
+  fail "topic file upload title" "body: $(cat "$FILE_BODY")"
 fi
 pass "topic file upload"
 
@@ -127,6 +135,7 @@ pass "topic count after delete"
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
 assert_status 200 "delete topic"
 assert_jq '.content == "2"' "delete topic content count"
+assert_jq '.title == "'"$TOPIC"'"' "delete topic title"
 pass "delete topic"
 
 ORPHAN="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes")"
@@ -136,6 +145,7 @@ pass "orphan item survives topic delete"
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
 assert_status 201 "recreate topic"
 assert_jq '.content == "2"' "recreate topic adopts orphan"
+assert_jq '.title == "'"$TOPIC"'"' "recreate topic title"
 pass "recreate topic"
 
 api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'

@@ -61,6 +61,13 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
+	stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName).Result()
+	if err != nil {
+		requestLogger{}.Errorf("topic get failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	storedValue := storage.ParseStoredValue(stored)
 	count, err := countTopicItems(ctx, rdb, topicName)
 	if err != nil {
 		requestLogger{}.Errorf("topic count failed: %v", err)
@@ -71,6 +78,7 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		SURL:    storage.GetDomain(r) + "/" + topicName,
 		Path:    topicName,
 		Type:    topicType,
+		Title:   storedValue.Title,
 		Content: topicCountString(count),
 	})
 }
@@ -113,6 +121,7 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 		if storage.ParseStoredValue(stored).Type != topicType {
 			continue
 		}
+		storedValue := storage.ParseStoredValue(stored)
 		count, err := countTopicItems(ctx, rdb, topicName)
 		if err != nil {
 			requestLogger{}.Warnf("topic list count failed: %s (%v)", topicName, err)
@@ -122,6 +131,7 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 			SURL:    domain + "/" + topicName,
 			Path:    topicName,
 			Type:    topicType,
+			Title:   storedValue.Title,
 			Content: topicCountString(count),
 		})
 	}
@@ -143,13 +153,7 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 		return
 	}
 	storedValue := storage.ParseStoredValue(stored)
-	content := responseContent(storedValue.Type, storedValue.Content, isExportRequest(r))
-	utils.JSON(w, http.StatusOK, ItemResponse{
-		SURL:    storage.GetDomain(r) + "/" + path,
-		Path:    path,
-		Type:    storedValue.Type,
-		Content: content,
-	})
+	utils.JSON(w, http.StatusOK, buildItemResponse(storage.GetDomain(r), path, storedValue, nil, isExportRequest(r)))
 }
 
 func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path string) {
@@ -242,13 +246,11 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			}
 			content = topicCountString(count)
 		}
-		links = append(links, ItemResponse{
-			SURL:    domain + "/" + path,
-			Path:    path,
-			Type:    storedValue.Type,
-			TTL:     ttl,
-			Content: content,
-		})
+		item := buildItemResponse(domain, path, storedValue, ttl, isExport)
+		if storedValue.Type == topicType {
+			item.Content = content
+		}
+		links = append(links, item)
 	}
 	utils.JSON(w, http.StatusOK, links)
 }
