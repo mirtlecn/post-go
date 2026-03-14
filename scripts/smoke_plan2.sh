@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_GO="$(mktemp "$ROOT_DIR/tmp-plan2-XXXXXX.go")"
-trap 'rm -f "$TMP_GO"' EXIT
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/smoke_common.sh"
+MODULE_TMP_DIR="$(mktemp -d "$ROOT_DIR/tmp-plan2-XXXXXX")"
+trap 'rm -rf "$MODULE_TMP_DIR"; cleanup_smoke_tmp' EXIT
+
+TMP_GO="$MODULE_TMP_DIR/main.go"
+TMP_BIN="$(mktemp "$TMP_DIR/plan2-XXXXXX.bin")"
 
 cat >"$TMP_GO" <<'EOF'
 package main
@@ -118,4 +123,5 @@ func main() {
 EOF
 
 cd "$ROOT_DIR"
-go run "$TMP_GO"
+go build -o "$TMP_BIN" "$TMP_GO"
+"$TMP_BIN"
