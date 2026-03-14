@@ -117,6 +117,7 @@ assert_contains "$TOPIC_HOME" "screening-signup" "topic home fallback title"
 assert_contains "$TOPIC_HOME" "↗" "topic home url mark"
 assert_contains "$TOPIC_HOME" "Asset File" "topic home file title"
 assert_contains "$TOPIC_HOME" "◫" "topic home file mark"
+assert_contains "$TOPIC_HOME" "href=\"/$TOPIC/castle-notes\"" "topic home absolute href"
 pass "topic home rebuild"
 
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'"}'

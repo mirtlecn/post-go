@@ -146,7 +146,7 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 			UpdatedAt: time.Unix(int64(item.Score), 0),
 		})
 	}
-	html, err := topic.RenderIndexHTML(topicName, indexItems)
+	html, err := topic.RenderIndexHTML(topicName, topicName, indexItems)
 	if err != nil {
 		return err
 	}

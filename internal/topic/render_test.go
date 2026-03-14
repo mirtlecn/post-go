@@ -28,19 +28,19 @@ func TestBuildIndexMarkdownSortsByUpdatedAtAndGroupsByYear(t *testing.T) {
 		},
 	}
 
-	output := BuildIndexMarkdown("Anime", items)
+	output := BuildIndexMarkdown("anime", "Anime", items)
 
 	expected := strings.Join([]string{
 		"# Anime",
 		"",
 		"## 2026",
 		"",
-		"- [Howl Visual Draft](./howl-visual) · 12-23",
-		"- [Castle in the Sky Notes](./castle-notes) ☰ · 12-21",
+		"- [Howl Visual Draft](/anime/howl-visual) · 12-23",
+		"- [Castle in the Sky Notes](/anime/castle-notes) ☰ · 12-21",
 		"",
 		"## 2025",
 		"",
-		"- [Poster Pack Winter](./poster-pack-winter.zip) ◫ · 10-18",
+		"- [Poster Pack Winter](/anime/poster-pack-winter.zip) ◫ · 10-18",
 		"",
 	}, "\n")
 
@@ -59,15 +59,15 @@ func TestBuildIndexMarkdownUsesFullPathFallbackForEmptyTitle(t *testing.T) {
 		},
 	}
 
-	output := BuildIndexMarkdown("anime", items)
+	output := BuildIndexMarkdown("anime", "anime", items)
 
-	if !strings.Contains(output, "[notes/howl-visual](./notes/howl-visual) ↗ · 12-23") {
+	if !strings.Contains(output, "[notes/howl-visual](/anime/notes/howl-visual) ↗ · 12-23") {
 		t.Fatalf("expected fallback title from full path, got %q", output)
 	}
 }
 
 func TestRenderIndexHTMLUsesPageTitle(t *testing.T) {
-	html, err := RenderIndexHTML("Anime", []Item{
+	html, err := RenderIndexHTML("anime", "Anime", []Item{
 		{
 			Path:      "howl-visual",
 			Type:      "html",
@@ -83,5 +83,8 @@ func TestRenderIndexHTMLUsesPageTitle(t *testing.T) {
 	}
 	if !strings.Contains(html, "Howl Visual Draft") {
 		t.Fatalf("expected entry title in html, got %q", html)
+	}
+	if !strings.Contains(html, `href="/anime/howl-visual"`) {
+		t.Fatalf("expected absolute topic href, got %q", html)
 	}
 }

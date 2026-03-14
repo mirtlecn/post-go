@@ -512,7 +512,7 @@ Markdown shape:
 # <topic>
 
 ## <year>
-- [<title>](./<path>) <mark> · <MM-dd>
+- [<title>](/<topic>/<path>) <mark> · <MM-dd>
 ```
 
 Type marks:

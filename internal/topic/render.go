@@ -19,10 +19,10 @@ type Item struct {
 }
 
 // BuildIndexMarkdown renders the topic index as Markdown grouped by year.
-func BuildIndexMarkdown(topicName string, items []Item) string {
+func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 	var builder strings.Builder
 	builder.WriteString("# ")
-	builder.WriteString(topicName)
+	builder.WriteString(topicTitle)
 	builder.WriteString("\n")
 
 	if len(items) == 0 {
@@ -48,8 +48,10 @@ func BuildIndexMarkdown(topicName string, items []Item) string {
 		}
 
 		builder.WriteString("- [")
-		builder.WriteString(displayTitle(topicName, item))
-		builder.WriteString("](./")
+		builder.WriteString(displayTitle(topicPath, item))
+		builder.WriteString("](/")
+		builder.WriteString(topicPath)
+		builder.WriteString("/")
 		builder.WriteString(item.Path)
 		builder.WriteString(")")
 		if mark := typeMark(item.Type); mark != "" {
@@ -65,10 +67,10 @@ func BuildIndexMarkdown(topicName string, items []Item) string {
 }
 
 // RenderIndexHTML converts a topic index Markdown document into HTML.
-func RenderIndexHTML(topicName string, items []Item) (string, error) {
+func RenderIndexHTML(topicPath, topicTitle string, items []Item) (string, error) {
 	return convert.ConvertMarkdownToHTMLWithOptions(
-		BuildIndexMarkdown(topicName, items),
-		convert.MarkdownOptions{PageTitle: topicName},
+		BuildIndexMarkdown(topicPath, topicTitle, items),
+		convert.MarkdownOptions{PageTitle: topicTitle},
 	)
 }
 
