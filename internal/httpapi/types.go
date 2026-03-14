@@ -15,7 +15,7 @@ type CreateResponse struct {
 	Path        string `json:"path"`
 	Type        string `json:"type"`
 	Content     string `json:"content"`
-	ExpiresIn   any    `json:"expires_in"`
+	TTL         any    `json:"ttl"`
 	Overwritten string `json:"overwritten,omitempty"`
 	Warning     string `json:"warning,omitempty"`
 }

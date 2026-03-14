@@ -216,8 +216,8 @@ func TestHandleJSONCreateStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if body.ExpiresIn != nil {
-		t.Fatalf("expected expires_in to be null, got %+v", body.ExpiresIn)
+	if body.TTL != nil {
+		t.Fatalf("expected ttl to be null, got %+v", body.TTL)
 	}
 	if body.Warning != "" {
 		t.Fatalf("expected no warning, got %q", body.Warning)
@@ -548,8 +548,8 @@ func TestHandleFileUploadStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if body.ExpiresIn != nil {
-		t.Fatalf("expected expires_in to be null, got %+v", body.ExpiresIn)
+	if body.TTL != nil {
+		t.Fatalf("expected ttl to be null, got %+v", body.TTL)
 	}
 }
 

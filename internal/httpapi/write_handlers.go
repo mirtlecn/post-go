@@ -282,11 +282,11 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	result := CreateResponse{
-		SURL:      storage.GetDomain(r) + "/" + pathVal,
-		Path:      pathVal,
-		Type:      contentType,
-		Content:   responseContent(contentType, inputContent, isExport),
-		ExpiresIn: expiresIn,
+		SURL:    storage.GetDomain(r) + "/" + pathVal,
+		Path:    pathVal,
+		Type:    contentType,
+		Content: responseContent(contentType, inputContent, isExport),
+		TTL:     expiresIn,
 	}
 	if existing != "" {
 		existingValue := storage.ParseStoredValue(existing)
@@ -357,11 +357,11 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		status = http.StatusOK
 	}
 	utils.JSON(w, status, CreateResponse{
-		SURL:      storage.GetDomain(r) + "/" + topicName,
-		Path:      topicName,
-		Type:      topicType,
-		Content:   topicCountString(count),
-		ExpiresIn: nil,
+		SURL:    storage.GetDomain(r) + "/" + topicName,
+		Path:    topicName,
+		Type:    topicType,
+		Content: topicCountString(count),
+		TTL:     nil,
 	})
 }
 

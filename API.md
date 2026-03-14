@@ -83,7 +83,7 @@ Fields:
   "path": "path",
   "type": "text",
   "content": "hello",
-  "expires_in": 10,
+  "ttl": 10,
   "overwritten": "old value"
 }
 ```
@@ -94,7 +94,7 @@ Fields:
 - `path: string`
 - `type: string`
 - `content: string`
-- `expires_in: number | null`
+- `ttl: number | null`
 - `overwritten: string` optional
 
 ### Delete response
@@ -223,7 +223,7 @@ Topic create response:
   "path": "anime",
   "type": "topic",
   "content": "0",
-  "expires_in": null
+  "ttl": null
 }
 ```
 

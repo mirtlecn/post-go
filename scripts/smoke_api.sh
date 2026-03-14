@@ -111,7 +111,7 @@ pass "overwrite existing"
 
 api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl","ttl":0}'
 assert_status 201 "ttl zero means infinite"
-assert_jq '.expires_in == null' "ttl zero means no expiration"
+assert_jq '.ttl == null' "ttl zero means no expiration"
 assert_jq '.warning == null or .warning == ""' "ttl zero no warning"
 pass "ttl zero means infinite"
 
@@ -179,8 +179,8 @@ FILE_ZERO_HTTP_BODY="$(cat "$FILE_ZERO_BODY")"
 if [[ "$FILE_ZERO_HTTP_STATUS" != "201" ]]; then
   fail "file upload ttl zero" "expected HTTP 201, got $FILE_ZERO_HTTP_STATUS, body: $FILE_ZERO_HTTP_BODY"
 fi
-if ! jq -e '.expires_in == null' >/dev/null <<<"$FILE_ZERO_HTTP_BODY"; then
-  fail "file upload ttl zero expires_in" "body: $FILE_ZERO_HTTP_BODY"
+if ! jq -e '.ttl == null' >/dev/null <<<"$FILE_ZERO_HTTP_BODY"; then
+  fail "file upload ttl zero ttl" "body: $FILE_ZERO_HTTP_BODY"
 fi
 pass "file upload ttl zero"
 

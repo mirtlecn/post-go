@@ -173,11 +173,11 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 	isExport := isExportRequest(r)
 	utils.JSON(w, status, CreateResponse{
-		SURL:      storage.GetDomain(r) + "/" + pathVal,
-		Path:      pathVal,
-		Type:      "file",
-		Content:   responseContent("file", objectKey, isExport),
-		ExpiresIn: expiresIn,
+		SURL:    storage.GetDomain(r) + "/" + pathVal,
+		Path:    pathVal,
+		Type:    "file",
+		Content: responseContent("file", objectKey, isExport),
+		TTL:     expiresIn,
 	})
 	if resolvedPath.IsTopicItem {
 		if err := rdb.ZAdd(ctx, topicItemsKey(resolvedPath.TopicName), redis.Z{
