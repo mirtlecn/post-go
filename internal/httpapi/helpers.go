@@ -35,8 +35,30 @@ func randIndex(max int) (int, error) {
 }
 
 func isURL(s string) bool {
-	_, err := url.ParseRequestURI(s)
+	_, err := parseURLValue(s)
 	return err == nil
+}
+
+func normalizeURLContent(content string) (string, error) {
+	trimmedContent := strings.TrimSpace(content)
+	if trimmedContent == "" {
+		return "", errors.New("`url` must not be empty")
+	}
+	if _, err := parseURLValue(trimmedContent); err != nil {
+		return "", errors.New("invalid url value: scheme is required")
+	}
+	return trimmedContent, nil
+}
+
+func parseURLValue(raw string) (*url.URL, error) {
+	parsedURL, err := url.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	if parsedURL.Scheme == "" {
+		return nil, errors.New("missing scheme")
+	}
+	return parsedURL, nil
 }
 
 func parseInt64(s string) (int64, error) {

@@ -151,6 +151,59 @@ func TestHandleJSONCreateStoresValueOnSuccess(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateTrimsURLContentWhenTypeIsURL(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"  https://example.com/path?q=1  ","path":"note","type":"url"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if store.lastSetValue != "url:https://example.com/path?q=1" {
+		t.Fatalf("expected trimmed url content, got %q", store.lastSetValue)
+	}
+}
+
+func TestHandleJSONCreateRejectsInvalidURLWhenTypeIsURL(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"example.com/path","path":"note","type":"url"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "invalid url value: scheme is required" {
+		t.Fatalf("expected invalid url error, got %q", body.Error)
+	}
+}
+
+func TestHandleJSONCreateRejectsInvalidURLWhenConvertIsURL(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"not a valid uri","path":"note","convert":"url"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "invalid url value: scheme is required" {
+		t.Fatalf("expected invalid url error, got %q", body.Error)
+	}
+}
+
 func TestHandleDeleteReturnsInternalErrorWhenRedisDeleteFails(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{

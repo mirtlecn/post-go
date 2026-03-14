@@ -157,6 +157,14 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 			contentType = "text"
 		}
 	}
+	if contentType == "url" {
+		normalizedURLContent, err := normalizeURLContent(inputContent)
+		if err != nil {
+			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+			return
+		}
+		inputContent = normalizedURLContent
+	}
 
 	ctx := context.Background()
 	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
