@@ -146,8 +146,9 @@ func TestHandleJSONCreateStoresValueOnSuccess(t *testing.T) {
 	if store.lastSetKey != "surl:note" {
 		t.Fatalf("expected key surl:note, got %q", store.lastSetKey)
 	}
-	if store.lastSetValue != "text:hello" {
-		t.Fatalf("expected stored value text:hello, got %q", store.lastSetValue)
+	expected := `{"type":"text","content":"hello"}`
+	if store.lastSetValue != expected {
+		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
 	}
 }
 
@@ -163,8 +164,9 @@ func TestHandleJSONCreateTrimsURLContentWhenTypeIsURL(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
-	if store.lastSetValue != "url:https://example.com/path?q=1" {
-		t.Fatalf("expected trimmed url content, got %q", store.lastSetValue)
+	expected := `{"type":"url","content":"https://example.com/path?q=1"}`
+	if store.lastSetValue != expected {
+		t.Fatalf("expected trimmed url content %s, got %q", expected, store.lastSetValue)
 	}
 }
 
@@ -207,7 +209,7 @@ func TestHandleJSONCreateRejectsInvalidURLWhenConvertIsURL(t *testing.T) {
 func TestHandleDeleteReturnsInternalErrorWhenRedisDeleteFails(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:note": {value: "text:hello"},
+			"surl:note": {value: `{"type":"text","content":"hello"}`},
 		},
 		delErr: errors.New("delete failed"),
 	}
@@ -230,7 +232,7 @@ func TestHandleDeleteReturnsInternalErrorWhenRedisDeleteFails(t *testing.T) {
 func TestHandleDeleteReturnsSuccessAfterRedisDelete(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:note": {value: "text:hello"},
+			"surl:note": {value: `{"type":"text","content":"hello"}`},
 		},
 	}
 	handler := newTestHandler(store)
@@ -277,8 +279,9 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	if store.lastSetKey != "surl:note.txt" {
 		t.Fatalf("expected stored key surl:note.txt, got %q", store.lastSetKey)
 	}
-	if store.lastSetValue != "file:post/default/uploaded.txt" {
-		t.Fatalf("expected stored value for uploaded object, got %q", store.lastSetValue)
+	expected := `{"type":"file","content":"post/default/uploaded.txt"}`
+	if store.lastSetValue != expected {
+		t.Fatalf("expected stored value for uploaded object %s, got %q", expected, store.lastSetValue)
 	}
 	if len(fileStore.deleteCalls) != 0 {
 		t.Fatalf("expected no compensation delete, got %+v", fileStore.deleteCalls)
@@ -299,6 +302,42 @@ func TestHandleFileUploadAppendsFilenameExtensionToPath(t *testing.T) {
 	}
 	if store.lastSetKey != "surl:custom/path.txt" {
 		t.Fatalf("expected path to include uploaded file extension, got %q", store.lastSetKey)
+	}
+}
+
+func TestHandleJSONCreateStoresTitleInJSONValue(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","title":"Greeting"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	expected := `{"type":"text","content":"hello","title":"Greeting"}`
+	if store.lastSetValue != expected {
+		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
+	}
+}
+
+func TestHandleFileUploadStoresTitleInJSONValue(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"path": "note", "title": "Attachment"}, "note.txt", "hello")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	expected := `{"type":"file","content":"post/default/uploaded.txt","title":"Attachment"}`
+	if store.lastSetValue != expected {
+		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
 	}
 }
 

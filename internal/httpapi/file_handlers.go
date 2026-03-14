@@ -32,6 +32,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 
 	pathVal := r.FormValue("path")
 	ttlVal := r.FormValue("ttl")
+	titleVal := r.FormValue("title")
 
 	if r.Method == http.MethodPut && pathVal == "" {
 		requestLogger{}.Warnf("file upload PUT missing path")
@@ -108,7 +109,11 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 
-	storedValue := storage.BuildStoredValue("file", objectKey)
+	storedValue := storage.BuildStoredValue(storage.StoredValue{
+		Type:    "file",
+		Content: objectKey,
+		Title:   titleVal,
+	})
 	var expiresIn any
 	if ttlVal != "" {
 		ttlMinutes, err := parseInt64(ttlVal)

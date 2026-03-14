@@ -43,12 +43,12 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
-	typ, content := storage.ParseStoredValue(stored)
-	content = responseContent(typ, content, isExportRequest(r))
+	storedValue := storage.ParseStoredValue(stored)
+	content := responseContent(storedValue.Type, storedValue.Content, isExportRequest(r))
 	utils.JSON(w, http.StatusOK, ItemResponse{
 		SURL:    storage.GetDomain(r) + "/" + path,
 		Path:    path,
-		Type:    typ,
+		Type:    storedValue.Type,
 		Content: content,
 	})
 }
@@ -67,19 +67,19 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
-	typ, content := storage.ParseStoredValue(stored)
-	switch typ {
+	storedValue := storage.ParseStoredValue(stored)
+	switch storedValue.Type {
 	case "url":
-		utils.Redirect(w, r, content, false)
+		utils.Redirect(w, r, storedValue.Content, false)
 		return
 	case "html":
-		utils.HTML(w, http.StatusOK, content, true)
+		utils.HTML(w, http.StatusOK, storedValue.Content, true)
 		return
 	case "file":
-		h.serveFile(w, r, path, content)
+		h.serveFile(w, r, path, storedValue.Content)
 		return
 	default:
-		utils.Text(w, http.StatusOK, content, true)
+		utils.Text(w, http.StatusOK, storedValue.Content, true)
 		return
 	}
 }
@@ -122,8 +122,8 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			requestLogger{}.Warnf("list ttl failed: %s (%v)", key, err)
 			continue
 		}
-		typ, content := storage.ParseStoredValue(stored)
-		content = responseContent(typ, content, isExport)
+		storedValue := storage.ParseStoredValue(stored)
+		content := responseContent(storedValue.Type, storedValue.Content, isExport)
 		var ttl *int64
 		if ttlSeconds > 0 {
 			ttlMinutes := int64(math.Ceil(ttlSeconds.Minutes()))
@@ -135,7 +135,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 		links = append(links, ItemResponse{
 			SURL:    domain + "/" + path,
 			Path:    path,
-			Type:    typ,
+			Type:    storedValue.Type,
 			TTL:     ttl,
 			Content: content,
 		})

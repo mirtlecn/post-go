@@ -1,11 +1,11 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 )
 
 const (
@@ -13,26 +13,39 @@ const (
 	PreviewLength = 15
 )
 
-// BuildStoredValue builds "type:content" string.
-func BuildStoredValue(typ, content string) string {
-	return typ + ":" + content
+// StoredValue is the JSON payload persisted in Redis for a content item.
+type StoredValue struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+	Title   string `json:"title,omitempty"`
 }
 
-// ParseStoredValue parses stored value into type and content.
-func ParseStoredValue(stored string) (typ, content string) {
-	if strings.HasPrefix(stored, "url:") {
-		return "url", strings.TrimPrefix(stored, "url:")
+// BuildStoredValue marshals a stored value to JSON.
+func BuildStoredValue(value StoredValue) string {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	err := encoder.Encode(value)
+	if err != nil {
+		panic(err)
 	}
-	if strings.HasPrefix(stored, "html:") {
-		return "html", strings.TrimPrefix(stored, "html:")
+	data := buf.Bytes()
+	if len(data) > 0 && data[len(data)-1] == '\n' {
+		data = data[:len(data)-1]
 	}
-	if strings.HasPrefix(stored, "file:") {
-		return "file", strings.TrimPrefix(stored, "file:")
+	return string(data)
+}
+
+// ParseStoredValue parses a JSON stored value.
+func ParseStoredValue(stored string) StoredValue {
+	var value StoredValue
+	if err := json.Unmarshal([]byte(stored), &value); err != nil {
+		return StoredValue{Type: "text", Content: stored}
 	}
-	if strings.HasPrefix(stored, "text:") {
-		return "text", strings.TrimPrefix(stored, "text:")
+	if value.Type == "" {
+		value.Type = "text"
 	}
-	return "text", stored
+	return value
 }
 
 // PreviewContent returns a preview string for list/detail responses.

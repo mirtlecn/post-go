@@ -46,13 +46,13 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		requestLogger{}.Warnf("clear file cache failed: %s (%v)", pathVal, err)
 	}
 
-	typ, content := storage.ParseStoredValue(stored)
-	if typ == "file" {
+	storedValue := storage.ParseStoredValue(stored)
+	if storedValue.Type == "file" {
 		conf := h.Cfg.S3Config()
 		if conf.IsConfigured() {
 			if client, err := h.deps.newFileStore(conf); err == nil {
-				if err := client.DeleteObject(ctx, content); err != nil {
-					requestLogger{}.Errorf("s3 delete failed: %s (%v)", content, err)
+				if err := client.DeleteObject(ctx, storedValue.Content); err != nil {
+					requestLogger{}.Errorf("s3 delete failed: %s (%v)", storedValue.Content, err)
 				}
 			}
 		}
@@ -61,8 +61,8 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	isExport := isExportRequest(r)
 	utils.JSON(w, http.StatusOK, DeleteResponse{
 		Deleted: pathVal,
-		Type:    typ,
-		Content: responseContent(typ, content, isExport),
+		Type:    storedValue.Type,
+		Content: responseContent(storedValue.Type, storedValue.Content, isExport),
 	})
 }
 
@@ -95,6 +95,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	pathVal, _ := storage.MustString(body, "path")
 	inputType, _ := storage.MustString(body, "type")
 	convertVal, _ := storage.MustString(body, "convert")
+	titleVal, _ := storage.MustString(body, "title")
 	var ttlMinutes int64
 	ttlProvided := hasKey(body, "ttl")
 	if v, ok := storage.MustInt(body, "ttl"); ok {
@@ -174,17 +175,21 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	key := storage.LinksPrefix + pathVal
-	stored := storage.BuildStoredValue(contentType, inputContent)
+	stored := storage.BuildStoredValue(storage.StoredValue{
+		Type:    contentType,
+		Content: inputContent,
+		Title:   titleVal,
+	})
 	existing, _ := rdb.Get(ctx, key).Result()
 	isExport := isExportRequest(r)
 	if existing != "" && !allowOverwrite {
-		exType, exContent := storage.ParseStoredValue(existing)
+		existingValue := storage.ParseStoredValue(existing)
 		details := map[string]any{
 			"existing": ItemResponse{
 				SURL:    storage.GetDomain(r) + "/" + pathVal,
 				Path:    pathVal,
-				Type:    exType,
-				Content: responseContent(exType, exContent, isExport),
+				Type:    existingValue.Type,
+				Content: responseContent(existingValue.Type, existingValue.Content, isExport),
 			},
 		}
 		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use PUT to overwrite", details)
@@ -225,8 +230,8 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		ExpiresIn: expiresIn,
 	}
 	if existing != "" {
-		exType, exContent := storage.ParseStoredValue(existing)
-		result.Overwritten = responseContent(exType, exContent, isExport)
+		existingValue := storage.ParseStoredValue(existing)
+		result.Overwritten = responseContent(existingValue.Type, existingValue.Content, isExport)
 	}
 	if ttlWarning != nil {
 		if s, ok := ttlWarning.(string); ok {
