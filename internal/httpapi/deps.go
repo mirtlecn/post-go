@@ -19,6 +19,11 @@ type redisStore interface {
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	TTL(ctx context.Context, key string) *redis.DurationCmd
+	ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd
+	ZRem(ctx context.Context, key string, members ...any) *redis.IntCmd
+	ZRevRangeWithScores(ctx context.Context, key string, start, stop int64) *redis.ZSliceCmd
+	ZCard(ctx context.Context, key string) *redis.IntCmd
+	Exists(ctx context.Context, keys ...string) *redis.IntCmd
 }
 
 type fileObjectStore interface {

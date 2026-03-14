@@ -12,6 +12,8 @@ import (
 	"post-go/internal/core"
 	"post-go/internal/storage"
 	"post-go/internal/utils"
+
+	"github.com/redis/go-redis/v9"
 )
 
 func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allowOverwrite bool) {
@@ -33,25 +35,12 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	pathVal := r.FormValue("path")
 	ttlVal := r.FormValue("ttl")
 	titleVal := r.FormValue("title")
+	topicVal := r.FormValue("topic")
 
 	if r.Method == http.MethodPut && pathVal == "" {
 		requestLogger{}.Warnf("file upload PUT missing path")
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required for PUT requests", nil, nil)
 		return
-	}
-
-	fileExt := strings.ToLower(pathpkgExt(header.Filename))
-	if pathVal != "" {
-		if err := storage.ValidatePath(pathVal); err != nil {
-			requestLogger{}.Warnf("invalid path: %s (%v)", pathVal, err)
-			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
-			return
-		}
-		if fileExt != "" && strings.ToLower(pathpkgExt(pathVal)) != fileExt {
-			pathVal = pathVal + fileExt
-		}
-	} else {
-		pathVal = randomPath() + fileExt
 	}
 
 	ctx := context.Background()
@@ -61,8 +50,44 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
+	fileExt := strings.ToLower(pathpkgExt(header.Filename))
+	if pathVal == "" {
+		pathVal = randomPath()
+	}
+	resolvedPath, err := h.resolveTopicPath(ctx, rdb, topicVal, pathVal)
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
+	}
+	if resolvedPath.IsTopicItem {
+		pathVal = resolvedPath.FullPath
+	}
+	if err := storage.ValidatePath(pathVal); err != nil {
+		requestLogger{}.Warnf("invalid path: %s (%v)", pathVal, err)
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
+	}
+	if resolvedPath.IsTopicItem && resolvedPath.RelativePath == "" {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
+		return
+	}
+	if fileExt != "" && strings.ToLower(pathpkgExt(pathVal)) != fileExt {
+		pathVal = pathVal + fileExt
+		if resolvedPath.IsTopicItem {
+			resolvedPath.RelativePath = resolvedPath.RelativePath + fileExt
+			resolvedPath.FullPath = resolvedPath.TopicName + "/" + resolvedPath.RelativePath
+		}
+	}
+	if exists, err := h.topicExists(ctx, rdb, pathVal); err == nil && exists {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", "topic home must be managed with `type=topic`", nil, nil)
+		return
+	}
 	key := storage.LinksPrefix + pathVal
 	existing, _ := rdb.Get(ctx, key).Result()
+	if existing != "" && storage.ParseStoredValue(existing).Type == topicType {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", "topic home must be managed with `type=topic`", nil, nil)
+		return
+	}
 	if existing != "" && !allowOverwrite {
 		requestLogger{}.Warnf("conflict on path: %s", pathVal)
 		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use PUT to overwrite", nil)
@@ -146,6 +171,14 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Content:   responseContent("file", objectKey, isExport),
 		ExpiresIn: expiresIn,
 	})
+	if resolvedPath.IsTopicItem {
+		if err := rdb.ZAdd(ctx, topicItemsKey(resolvedPath.TopicName), redis.Z{
+			Score:  float64(time.Now().Unix()),
+			Member: resolvedPath.RelativePath,
+		}).Err(); err == nil {
+			_ = h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName)
+		}
+	}
 }
 
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, objectKey string) {

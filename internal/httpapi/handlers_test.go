@@ -14,6 +14,7 @@ import (
 
 	"post-go/internal/core"
 	"post-go/internal/s3"
+	"post-go/internal/storage"
 	"post-go/internal/utils"
 
 	"github.com/minio/minio-go/v7"
@@ -26,15 +27,25 @@ type fakeRedisStore struct {
 	setExErr     error
 	delErr       error
 	unlinkErr    error
+	existsResult int64
+	existsErr    error
 	scanKeys     []string
 	scanCursor   uint64
 	ttlResult    time.Duration
 	ttlErr       error
 	mgetResults  []any
 	mgetErr      error
+	zaddErr      error
+	zremErr      error
+	zcardResult  int64
+	zcardErr     error
+	zrangeResult []redis.Z
+	zrangeErr    error
 	lastSetKey   string
 	lastSetValue string
 	lastSetTTL   time.Duration
+	setKeys      []string
+	setValues    []string
 }
 
 type fakeStringResult struct {
@@ -61,6 +72,12 @@ func (f *fakeRedisStore) Set(ctx context.Context, key string, value any, expirat
 	f.lastSetKey = key
 	f.lastSetValue, _ = value.(string)
 	f.lastSetTTL = expiration
+	f.setKeys = append(f.setKeys, key)
+	f.setValues = append(f.setValues, f.lastSetValue)
+	if f.getResults == nil {
+		f.getResults = map[string]fakeStringResult{}
+	}
+	f.getResults[key] = fakeStringResult{value: f.lastSetValue}
 	return redis.NewStatusResult("OK", f.setErr)
 }
 
@@ -68,6 +85,12 @@ func (f *fakeRedisStore) SetEx(ctx context.Context, key string, value any, expir
 	f.lastSetKey = key
 	f.lastSetValue, _ = value.(string)
 	f.lastSetTTL = expiration
+	f.setKeys = append(f.setKeys, key)
+	f.setValues = append(f.setValues, f.lastSetValue)
+	if f.getResults == nil {
+		f.getResults = map[string]fakeStringResult{}
+	}
+	f.getResults[key] = fakeStringResult{value: f.lastSetValue}
 	return redis.NewStatusResult("OK", f.setExErr)
 }
 
@@ -83,6 +106,10 @@ func (f *fakeRedisStore) Scan(ctx context.Context, cursor uint64, match string, 
 	return redis.NewScanCmdResult(f.scanKeys, f.scanCursor, nil)
 }
 
+func (f *fakeRedisStore) Exists(ctx context.Context, keys ...string) *redis.IntCmd {
+	return redis.NewIntResult(f.existsResult, f.existsErr)
+}
+
 func (f *fakeRedisStore) TTL(ctx context.Context, key string) *redis.DurationCmd {
 	return redis.NewDurationResult(f.ttlResult, f.ttlErr)
 }
@@ -93,6 +120,22 @@ func (f *fakeRedisStore) MGet(ctx context.Context, keys ...string) *redis.SliceC
 
 func (f *fakeRedisStore) TxPipeline() redis.Pipeliner {
 	return redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"}).TxPipeline()
+}
+
+func (f *fakeRedisStore) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
+	return redis.NewIntResult(int64(len(members)), f.zaddErr)
+}
+
+func (f *fakeRedisStore) ZRem(ctx context.Context, key string, members ...any) *redis.IntCmd {
+	return redis.NewIntResult(int64(len(members)), f.zremErr)
+}
+
+func (f *fakeRedisStore) ZRevRangeWithScores(ctx context.Context, key string, start, stop int64) *redis.ZSliceCmd {
+	return redis.NewZSliceCmdResult(f.zrangeResult, f.zrangeErr)
+}
+
+func (f *fakeRedisStore) ZCard(ctx context.Context, key string) *redis.IntCmd {
+	return redis.NewIntResult(f.zcardResult, f.zcardErr)
 }
 
 func (f *fakeFileStore) UploadFile(ctx context.Context, filename string, size int64, contentType string, reader io.Reader, ttlSeconds int64) (string, error) {
@@ -203,6 +246,136 @@ func TestHandleJSONCreateRejectsInvalidURLWhenConvertIsURL(t *testing.T) {
 	body := decodeErrorPayload(t, response)
 	if body.Error != "invalid url value: scheme is required" {
 		t.Fatalf("expected invalid url error, got %q", body.Error)
+	}
+}
+
+func TestHandleJSONCreateRejectsMismatchedTypeAndConvert(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","type":"text","convert":"html"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`type` and `convert` must match when both are provided" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
+func TestHandleJSONCreateCreatesTopicHome(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"path":"anime","type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if store.lastSetKey != "surl:anime" {
+		t.Fatalf("expected topic home to be stored, got %q", store.lastSetKey)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != topicType {
+		t.Fatalf("expected stored topic type, got %q", stored.Type)
+	}
+}
+
+func TestHandleJSONCreateRejectsTTLForTopic(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"path":"anime","type":"topic","ttl":10}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "topic does not support ttl" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
+func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+		zrangeResult: []redis.Z{{Score: float64(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix()), Member: "castle"}},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"topic":"anime","path":"castle","url":"# Castle","type":"md2html","title":"Castle"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if len(store.setKeys) < 2 {
+		t.Fatalf("expected item write and topic rebuild, got %+v", store.setKeys)
+	}
+	if store.setKeys[0] != "surl:anime/castle" {
+		t.Fatalf("expected topic item write first, got %+v", store.setKeys)
+	}
+	if store.setKeys[len(store.setKeys)-1] != "surl:anime" {
+		t.Fatalf("expected topic home rebuild, got %+v", store.setKeys)
+	}
+}
+
+func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+		zcardResult: 3,
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"anime","type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected topic lookup to be handled")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Type != topicType || body.Content != "3" {
+		t.Fatalf("unexpected topic response: %+v", body)
+	}
+}
+
+func TestHandleDeleteRejectsTopicHomeWithoutTopicType(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"anime"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
 	}
 }
 

@@ -21,12 +21,53 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 	if !hasPath {
 		return false
 	}
+	typeInfo, err := normalizeTypeAlias(body)
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return true
+	}
 	if pathVal == "" {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
 		return true
 	}
+	if typeInfo.InputType == topicType {
+		h.handleTopicLookupAuthed(w, r, pathVal)
+		return true
+	}
 	h.handleLookupAuthed(w, r, pathVal)
 	return true
+}
+
+func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request, topicName string) {
+	ctx := context.Background()
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
+	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	exists, err := h.topicExists(ctx, rdb, topicName)
+	if err != nil {
+		requestLogger{}.Errorf("topic lookup failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	if !exists {
+		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
+		return
+	}
+	count, err := rdb.ZCard(ctx, topicItemsKey(topicName)).Result()
+	if err != nil {
+		requestLogger{}.Errorf("topic count failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	utils.JSON(w, http.StatusOK, ItemResponse{
+		SURL:    storage.GetDomain(r) + "/" + topicName,
+		Path:    topicName,
+		Type:    topicType,
+		Content: topicCountString(count),
+	})
 }
 
 func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, path string) {
@@ -71,6 +112,9 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 	switch storedValue.Type {
 	case "url":
 		utils.Redirect(w, r, storedValue.Content, false)
+		return
+	case topicType:
+		utils.HTML(w, http.StatusOK, storedValue.Content, true)
 		return
 	case "html":
 		utils.HTML(w, http.StatusOK, storedValue.Content, true)
@@ -131,6 +175,14 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 				ttlMinutes = 1
 			}
 			ttl = &ttlMinutes
+		}
+		if storedValue.Type == topicType {
+			count, err := rdb.ZCard(ctx, topicItemsKey(path)).Result()
+			if err != nil {
+				requestLogger{}.Warnf("topic count failed: %s (%v)", path, err)
+				continue
+			}
+			content = topicCountString(count)
 		}
 		links = append(links, ItemResponse{
 			SURL:    domain + "/" + path,
