@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"strings"
-	"regexp"
 	"github.com/skip2/go-qrcode"
+	"html"
+	"regexp"
+	"strings"
 
 	callouts "github.com/ZMT-Creative/gm-alert-callouts"
 	katex "github.com/libkush/goldmark-katex"
@@ -16,8 +17,20 @@ import (
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
+// MarkdownOptions customizes Markdown-to-HTML rendering.
+type MarkdownOptions struct {
+	PageTitle      string
+	TopicBackLink  string
+	TopicBackLabel string
+}
+
 // ConvertMarkdownToHTML converts Markdown (GFM) to a full HTML document.
 func ConvertMarkdownToHTML(markdown string) (string, error) {
+	return ConvertMarkdownToHTMLWithOptions(markdown, MarkdownOptions{})
+}
+
+// ConvertMarkdownToHTMLWithOptions converts Markdown (GFM) to HTML with optional page metadata.
+func ConvertMarkdownToHTMLWithOptions(markdown string, options MarkdownOptions) (string, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -32,10 +45,11 @@ func ConvertMarkdownToHTML(markdown string) (string, error) {
 	)
 
 	var buf bytes.Buffer
-	if err := md.Convert([]byte(stripFrontMatter(markdown)), &buf); err != nil {
+	input := buildMarkdownInput(markdown, options)
+	if err := md.Convert([]byte(stripFrontMatter(input)), &buf); err != nil {
 		return "", err
 	}
-	return wrapHTML(buf.String(), alertCSS()), nil
+	return wrapHTML(buf.String(), alertCSS(), options.PageTitle), nil
 }
 
 // ConvertToQRCode converts text to a small terminal-friendly QR code string.
@@ -102,7 +116,18 @@ func stripFrontMatter(input string) string {
 	return input[3+idx+4:]
 }
 
-func wrapHTML(body, alertsStyle string) string {
+func buildMarkdownInput(markdown string, options MarkdownOptions) string {
+	if options.TopicBackLink == "" {
+		return markdown
+	}
+	backLabel := options.TopicBackLabel
+	if backLabel == "" {
+		backLabel = "Topic"
+	}
+	return "[← Back to " + backLabel + "](" + options.TopicBackLink + ")\n\n" + markdown
+}
+
+func wrapHTML(body, alertsStyle, pageTitle string) string {
 	// 基础资源
 	cssURL := "https://cdn.jsdelivr.net/gh/sindresorhus/github-markdown-css/github-markdown.min.css"
 	darkBg := "#0d1117"
@@ -145,7 +170,7 @@ func wrapHTML(body, alertsStyle string) string {
 		"<head>\n" +
 		"<meta charset=\"utf-8\">\n" +
 		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimal-ui\">\n" +
-		"<title></title>\n" +
+		"<title>" + html.EscapeString(pageTitle) + "</title>\n" +
 		"<link rel=\"stylesheet\" href=\"" + cssURL + "\">\n" +
 		extraHead.String() +
 		"<style>\n" +

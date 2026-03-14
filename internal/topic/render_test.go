@@ -1,0 +1,87 @@
+package topic
+
+import (
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestBuildIndexMarkdownSortsByUpdatedAtAndGroupsByYear(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "castle-notes",
+			Type:      "text",
+			Title:     "Castle in the Sky Notes",
+			UpdatedAt: time.Date(2026, time.December, 21, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Path:      "howl-visual",
+			Type:      "html",
+			Title:     "Howl Visual Draft",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Path:      "poster-pack-winter.zip",
+			Type:      "file",
+			Title:     "Poster Pack Winter",
+			UpdatedAt: time.Date(2025, time.October, 18, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	output := BuildIndexMarkdown("Anime", items)
+
+	expected := strings.Join([]string{
+		"# Anime",
+		"",
+		"## 2026",
+		"",
+		"- [Howl Visual Draft](./howl-visual) · 12-23",
+		"- [Castle in the Sky Notes](./castle-notes) ☰ · 12-21",
+		"",
+		"## 2025",
+		"",
+		"- [Poster Pack Winter](./poster-pack-winter.zip) ◫ · 10-18",
+		"",
+	}, "\n")
+
+	if output != expected {
+		t.Fatalf("unexpected markdown output:\n%s", output)
+	}
+}
+
+func TestBuildIndexMarkdownUsesFullPathFallbackForEmptyTitle(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "notes/howl-visual",
+			FullPath:  "anime/notes/howl-visual",
+			Type:      "url",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	output := BuildIndexMarkdown("anime", items)
+
+	if !strings.Contains(output, "[notes/howl-visual](./notes/howl-visual) ↗ · 12-23") {
+		t.Fatalf("expected fallback title from full path, got %q", output)
+	}
+}
+
+func TestRenderIndexHTMLUsesPageTitle(t *testing.T) {
+	html, err := RenderIndexHTML("Anime", []Item{
+		{
+			Path:      "howl-visual",
+			Type:      "html",
+			Title:     "Howl Visual Draft",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected render to succeed, got %v", err)
+	}
+	if !strings.Contains(html, "<title>Anime</title>") {
+		t.Fatalf("expected page title, got %q", html)
+	}
+	if !strings.Contains(html, "Howl Visual Draft") {
+		t.Fatalf("expected entry title in html, got %q", html)
+	}
+}
