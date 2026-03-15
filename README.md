@@ -26,6 +26,11 @@ make test  # run go test ./...
 make smoke # run ./scripts/smoke_all.sh
 ```
 
+CI:
+- GitHub Actions runs `go test ./...`
+- GitHub Actions runs a multi-platform snapshot build through GoReleaser on push and pull request
+- build outputs are uploaded from `dist/` as a GitHub Actions artifact
+
 Required env:
 `LINKS_REDIS_URL`, `SECRET_KEY`
 
