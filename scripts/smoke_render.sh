@@ -81,18 +81,18 @@ func main() {
 			UpdatedAt: time.Date(2025, time.October, 18, 10, 0, 0, 0, time.UTC),
 		},
 	})
-	mustContain("markdown year header", markdown, "## 2026")
-	pass("markdown year header")
-	mustContain("text type mark", markdown, "[Castle in the Sky Notes](/anime/castle-notes) ☰ · 12-21")
+	mustContain("flat markdown item", markdown, "[Howl Visual Draft](/anime/howl-visual) 2026-12-23")
+	pass("flat markdown item")
+	mustContain("text type mark", markdown, "[Castle in the Sky Notes](/anime/castle-notes) ☰ 2026-12-21")
 	pass("text type mark")
-	mustContain("url type mark", markdown, "[screening-signup](/anime/screening-signup) ↗ · 12-20")
+	mustContain("url type mark", markdown, "[screening-signup](/anime/screening-signup) ↗ 2026-12-20")
 	pass("url type mark")
-	mustContain("file type mark", markdown, "[Poster Pack Winter](/anime/poster-pack-winter.zip) ◫ · 10-18")
+	mustContain("file type mark", markdown, "[Poster Pack Winter](/anime/poster-pack-winter.zip) ◫ 2025-10-18")
 	pass("file type mark")
-	if strings.Contains(markdown, "[Howl Visual Draft](/anime/howl-visual)  · 12-23") {
+	if strings.Contains(markdown, "[Howl Visual Draft](/anime/howl-visual)  2026-12-23") {
 		fail("html type mark", "html entry should not render an empty mark")
 	}
-	mustContain("html no type mark", markdown, "[Howl Visual Draft](/anime/howl-visual) · 12-23")
+	mustContain("html no type mark", markdown, "[Howl Visual Draft](/anime/howl-visual) 2026-12-23")
 	pass("html no type mark")
 
 	fallbackMarkdown := topic.BuildIndexMarkdown("anime", "anime", []topic.Item{
@@ -103,7 +103,7 @@ func main() {
 			UpdatedAt: time.Date(2026, time.December, 19, 10, 0, 0, 0, time.UTC),
 		},
 	})
-	mustContain("title fallback", fallbackMarkdown, "[notes/howl-visual](/anime/notes/howl-visual) · 12-19")
+	mustContain("title fallback", fallbackMarkdown, "[notes/howl-visual](/anime/notes/howl-visual) 2026-12-19")
 	pass("title fallback")
 
 	indexHTML, err := topic.RenderIndexHTML("anime", "Anime", []topic.Item{

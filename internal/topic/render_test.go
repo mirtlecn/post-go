@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestBuildIndexMarkdownSortsByUpdatedAtAndGroupsByYear(t *testing.T) {
+func TestBuildIndexMarkdownSortsByUpdatedAtAsFlatList(t *testing.T) {
 	items := []Item{
 		{
 			Path:      "castle-notes",
@@ -33,14 +33,9 @@ func TestBuildIndexMarkdownSortsByUpdatedAtAndGroupsByYear(t *testing.T) {
 	expected := strings.Join([]string{
 		"# Anime",
 		"",
-		"## 2026",
-		"",
-		"- [Howl Visual Draft](/anime/howl-visual) · 12-23",
-		"- [Castle in the Sky Notes](/anime/castle-notes) ☰ · 12-21",
-		"",
-		"## 2025",
-		"",
-		"- [Poster Pack Winter](/anime/poster-pack-winter.zip) ◫ · 10-18",
+		"- [Howl Visual Draft](/anime/howl-visual) 2026-12-23",
+		"- [Castle in the Sky Notes](/anime/castle-notes) ☰ 2026-12-21",
+		"- [Poster Pack Winter](/anime/poster-pack-winter.zip) ◫ 2025-10-18",
 		"",
 	}, "\n")
 
@@ -61,7 +56,7 @@ func TestBuildIndexMarkdownUsesFullPathFallbackForEmptyTitle(t *testing.T) {
 
 	output := BuildIndexMarkdown("anime", "anime", items)
 
-	if !strings.Contains(output, "[notes/howl-visual](/anime/notes/howl-visual) ↗ · 12-23") {
+	if !strings.Contains(output, "[notes/howl-visual](/anime/notes/howl-visual) ↗ 2026-12-23") {
 		t.Fatalf("expected fallback title from full path, got %q", output)
 	}
 }

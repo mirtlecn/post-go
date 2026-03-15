@@ -497,8 +497,7 @@ Markdown shape:
 ```md
 # <topic>
 
-## <year>
-- [<title>](/<topic>/<path>) <mark> · <MM-dd>
+- [<title>](/<topic>/<path>) <mark> YYYY-MM-DD
 ```
 
 Type marks:

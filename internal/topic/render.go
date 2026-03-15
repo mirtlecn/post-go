@@ -1,7 +1,6 @@
 package topic
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -18,7 +17,7 @@ type Item struct {
 	UpdatedAt time.Time
 }
 
-// BuildIndexMarkdown renders the topic index as Markdown grouped by year.
+// BuildIndexMarkdown renders the topic index as a flat Markdown list.
 func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 	var builder strings.Builder
 	builder.WriteString("# ")
@@ -37,16 +36,8 @@ func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 		return sorted[i].UpdatedAt.After(sorted[j].UpdatedAt)
 	})
 
-	currentYear := 0
+	builder.WriteString("\n")
 	for _, item := range sorted {
-		year := item.UpdatedAt.Year()
-		if year != currentYear {
-			builder.WriteString("\n## ")
-			builder.WriteString(fmt.Sprintf("%d", year))
-			builder.WriteString("\n\n")
-			currentYear = year
-		}
-
 		builder.WriteString("- [")
 		builder.WriteString(displayTitle(topicPath, item))
 		builder.WriteString("](/")
@@ -58,8 +49,8 @@ func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 			builder.WriteString(" ")
 			builder.WriteString(mark)
 		}
-		builder.WriteString(" · ")
-		builder.WriteString(item.UpdatedAt.Format("01-02"))
+		builder.WriteString(" ")
+		builder.WriteString(item.UpdatedAt.Format("2006-01-02"))
 		builder.WriteString("\n")
 	}
 
