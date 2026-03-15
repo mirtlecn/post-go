@@ -155,6 +155,17 @@ assert_status 200 "lookup recreated topic"
 assert_jq '.content == "2"' "lookup recreated topic count"
 pass "lookup recreated topic"
 
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$REDIS_DB" DEL "surl:$TOPIC/castle-notes" >/dev/null
+api_json PUT "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
+assert_status 200 "refresh topic cleans stale members"
+assert_jq '.content == "1"' "refresh topic cleans stale members body"
+pass "refresh topic cleans stale members"
+
+api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
+assert_status 200 "lookup refreshed topic count"
+assert_jq '.content == "1"' "lookup refreshed topic count body"
+pass "lookup refreshed topic count"
+
 NESTED_TOPIC="$TOPIC/2026"
 api_json POST "$POST_BASE_URL/" '{"path":"'"$NESTED_TOPIC"'","type":"topic"}'
 assert_status 201 "create nested topic"
@@ -173,7 +184,7 @@ pass "nested topic count after full path create"
 
 api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
 assert_status 200 "parent topic count excludes nested topic item"
-assert_jq '.content == "2"' "parent topic count excludes nested topic item body"
+assert_jq '.content == "1"' "parent topic count excludes nested topic item body"
 pass "parent topic count excludes nested topic item"
 
 echo "Topic API smoke checks completed successfully."

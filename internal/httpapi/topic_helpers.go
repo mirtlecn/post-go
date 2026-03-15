@@ -124,6 +124,7 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 		return err
 	}
 	indexItems := make([]topic.Item, 0, len(items))
+	staleMembers := make([]any, 0)
 	for _, item := range items {
 		member, ok := item.Member.(string)
 		if !ok || member == "" {
@@ -134,6 +135,7 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 		}
 		stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName+"/"+member).Result()
 		if err == redis.Nil {
+			staleMembers = append(staleMembers, member)
 			continue
 		}
 		if err != nil {
@@ -147,6 +149,11 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 			Title:     storedValue.Title,
 			UpdatedAt: time.Unix(int64(item.Score), 0),
 		})
+	}
+	if len(staleMembers) > 0 {
+		if err := rdb.ZRem(ctx, topicItemsKey(topicName), staleMembers...).Err(); err != nil {
+			return err
+		}
 	}
 	html, err := topic.RenderIndexHTML(topicName, topicName, indexItems)
 	if err != nil {

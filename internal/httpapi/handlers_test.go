@@ -37,6 +37,8 @@ type fakeRedisStore struct {
 	mgetErr      error
 	zaddErr      error
 	zremErr      error
+	zremKeys     []string
+	zremMembers  []any
 	zcardResult  int64
 	zcardErr     error
 	zrangeResult []redis.Z
@@ -132,6 +134,8 @@ func (f *fakeRedisStore) ZAdd(ctx context.Context, key string, members ...redis.
 }
 
 func (f *fakeRedisStore) ZRem(ctx context.Context, key string, members ...any) *redis.IntCmd {
+	f.zremKeys = append(f.zremKeys, key)
+	f.zremMembers = append(f.zremMembers, members...)
 	return redis.NewIntResult(int64(len(members)), f.zremErr)
 }
 
@@ -451,6 +455,33 @@ func TestResolveTopicPathFallsBackToShorterTopicPrefix(t *testing.T) {
 	}
 	if resolved.TopicName != "blog" || resolved.RelativePath != "2027/post-1" {
 		t.Fatalf("unexpected resolved path: %+v", resolved)
+	}
+}
+
+func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
+	store := &fakeRedisStore{
+		zrangeResult: []redis.Z{
+			{Score: float64(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix()), Member: "alive"},
+			{Score: float64(time.Date(2026, time.December, 22, 10, 0, 0, 0, time.UTC).Unix()), Member: "gone"},
+			{Score: 0, Member: topicPlaceholderMember},
+		},
+		getResults: map[string]fakeStringResult{
+			"surl:anime/alive": {value: `{"type":"text","content":"hello","title":"Alive"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	if err := handler.rebuildTopicIndex(context.Background(), store, "anime"); err != nil {
+		t.Fatalf("expected rebuild to succeed, got %v", err)
+	}
+	if len(store.zremKeys) != 1 || store.zremKeys[0] != "topic:anime:items" {
+		t.Fatalf("expected stale zrem on topic items, got keys=%+v members=%+v", store.zremKeys, store.zremMembers)
+	}
+	if len(store.zremMembers) != 1 || store.zremMembers[0] != "gone" {
+		t.Fatalf("expected stale member removal, got %+v", store.zremMembers)
+	}
+	if store.lastSetKey != "surl:anime" {
+		t.Fatalf("expected rebuilt topic home, got %q", store.lastSetKey)
 	}
 }
 

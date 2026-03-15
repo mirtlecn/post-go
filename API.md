@@ -331,6 +331,7 @@ Update an existing item, or rebuild a topic.
 Rules:
 
 - rebuilds `surl:<topic>` from `topic:<topic>:items`
+- removes stale topic members whose `surl:<topic>/<path>` content no longer exists
 - does not change child items
 
 ## `DELETE /`
@@ -604,7 +605,7 @@ Important boundary:
 
 - topic count and topic index are not actively repaired on TTL expiration
 - expired topic items may leave stale members in `topic:<topic>:items`
-- count and index are corrected only on later topic writes
+- `PUT /` with `type=topic` repairs stale members and refreshes count/index
 
 ---
 
