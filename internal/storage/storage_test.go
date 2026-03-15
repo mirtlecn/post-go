@@ -67,3 +67,39 @@ func TestMustIntRejectsDecimalJSONNumber(t *testing.T) {
 		t.Fatalf("expected decimal json number to be rejected, got %d", value)
 	}
 }
+
+func TestValidatePathAllowsExpectedCharacters(t *testing.T) {
+	validPaths := []string{
+		"abc",
+		"a-b_c.d",
+		"dir/file",
+		"a(b)c",
+		"topic/2026/post-1",
+	}
+
+	for _, path := range validPaths {
+		if err := ValidatePath(path); err != nil {
+			t.Fatalf("expected path %q to be valid, got %v", path, err)
+		}
+	}
+}
+
+func TestValidatePathRejectsInvalidCharactersAndBounds(t *testing.T) {
+	invalidPaths := []string{
+		"",
+		strings.Repeat("a", 100),
+		"has space",
+		"中文",
+		"bad?",
+		"bad#",
+		"bad&",
+		"bad:",
+		`bad\path`,
+	}
+
+	for _, path := range invalidPaths {
+		if err := ValidatePath(path); err == nil {
+			t.Fatalf("expected path %q to be invalid", path)
+		}
+	}
+}
