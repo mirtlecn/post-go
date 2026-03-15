@@ -222,6 +222,23 @@ func TestHandleJSONCreateStoresValueOnSuccess(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateNormalizesPathBeforeStore(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"/note/"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if store.lastSetKey != "surl:note" {
+		t.Fatalf("expected normalized key surl:note, got %q", store.lastSetKey)
+	}
+}
+
 func TestHandleJSONCreateStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)
@@ -449,6 +466,50 @@ func TestHandleJSONCreateRollsBackTopicItemWhenTopicSyncFails(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateRejectsSlashOnlyPathWhenTopicProvided(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"topic":"anime","path":"///","url":"hello"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`path` must not be \"/\" when `topic` is provided" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
+func TestHandleJSONCreateRejectsEmptyTopicMemberSegment(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"topic":"anime","path":"anime//castle","url":"hello"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`path` must not contain empty topic members" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
 func TestResolveTopicPathUsesLongestExistingTopicPrefix(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -487,6 +548,44 @@ func TestResolveTopicPathFallsBackToShorterTopicPrefix(t *testing.T) {
 	}
 	if resolved.TopicName != "blog" || resolved.RelativePath != "2027/post-1" {
 		t.Fatalf("unexpected resolved path: %+v", resolved)
+	}
+}
+
+func TestResolveTopicPathNormalizesTrailingSlashForTopicItem(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	resolved, err := handler.resolveTopicPath(context.Background(), store, "anime", "/castle/")
+	if err != nil {
+		t.Fatalf("expected resolve to succeed, got %v", err)
+	}
+	if resolved.FullPath != "anime/castle" || resolved.RelativePath != "castle" {
+		t.Fatalf("unexpected resolved path: %+v", resolved)
+	}
+}
+
+func TestHandlePathNormalizesTrailingSlashOnLookup(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/note/", nil)
+	response := httptest.NewRecorder()
+
+	handler.handlePath(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	body := strings.TrimSpace(response.Body.String())
+	if body != "hello" {
+		t.Fatalf("expected lookup content hello, got %q", body)
 	}
 }
 

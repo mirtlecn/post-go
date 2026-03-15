@@ -34,6 +34,7 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
 		return true
 	}
+	pathVal = storage.NormalizePath(pathVal)
 	if typeInfo.InputType == topicType {
 		h.handleTopicLookupAuthed(w, r, pathVal)
 		return true
@@ -43,6 +44,7 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request, topicName string) {
+	topicName = storage.NormalizePath(topicName)
 	ctx := context.Background()
 	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
@@ -138,6 +140,7 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, path string) {
+	path = storage.NormalizePath(path)
 	ctx := context.Background()
 	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
@@ -162,6 +165,7 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 }
 
 func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path string) {
+	path = storage.NormalizePath(path)
 	ctx := context.Background()
 	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {

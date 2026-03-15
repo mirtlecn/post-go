@@ -70,6 +70,7 @@ func (h *Handler) topicExists(ctx context.Context, rdb redisStore, topicName str
 }
 
 func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicName, pathVal string) (resolvedTopicPath, error) {
+	pathVal = storage.NormalizePath(pathVal)
 	resolved := resolvedTopicPath{FullPath: pathVal}
 	if pathVal == "" {
 		return resolved, nil
@@ -82,12 +83,21 @@ func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicNam
 		if !exists {
 			return resolved, errors.New("topic does not exist")
 		}
+		if pathVal == "/" {
+			return resolved, errors.New("`path` must not be \"/\" when `topic` is provided")
+		}
 		if strings.Contains(pathVal, "/") {
 			expectedPrefix := topicName + "/"
 			if !strings.HasPrefix(pathVal, expectedPrefix) {
 				return resolved, errors.New("`topic` and `path` must match")
 			}
 			pathVal = strings.TrimPrefix(pathVal, expectedPrefix)
+		}
+		if pathVal == "" {
+			return resolved, errors.New("`path` is required")
+		}
+		if hasEmptyPathSegment(pathVal) {
+			return resolved, errors.New("`path` must not contain empty topic members")
 		}
 		return resolvedTopicPath{
 			IsTopicItem:   true,
@@ -106,6 +116,12 @@ func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicNam
 			return resolved, err
 		}
 		if exists {
+			if relativePath == "" {
+				return resolved, errors.New("`path` is required")
+			}
+			if hasEmptyPathSegment(relativePath) {
+				return resolved, errors.New("`path` must not contain empty topic members")
+			}
 			return resolvedTopicPath{
 				IsTopicItem:   true,
 				TopicName:     topicPrefix,

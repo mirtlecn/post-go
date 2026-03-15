@@ -68,6 +68,28 @@ func TestMustIntRejectsDecimalJSONNumber(t *testing.T) {
 	}
 }
 
+func TestNormalizePath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{input: "", expected: ""},
+		{input: "note", expected: "note"},
+		{input: "/note", expected: "note"},
+		{input: "note/", expected: "note"},
+		{input: "/note/", expected: "note"},
+		{input: "///", expected: "/"},
+		{input: "/", expected: "/"},
+		{input: "topic//entry", expected: "topic//entry"},
+	}
+
+	for _, test := range tests {
+		if got := NormalizePath(test.input); got != test.expected {
+			t.Fatalf("expected normalized path %q for %q, got %q", test.expected, test.input, got)
+		}
+	}
+}
+
 func TestValidatePathAllowsExpectedCharacters(t *testing.T) {
 	validPaths := []string{
 		"abc",

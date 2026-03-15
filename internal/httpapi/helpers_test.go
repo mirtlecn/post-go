@@ -130,3 +130,23 @@ func TestNormalizeTypeAliasRejectsMismatchedTypeAndConvert(t *testing.T) {
 		t.Fatalf("expected mismatched type and convert to be rejected")
 	}
 }
+
+func TestHasEmptyPathSegment(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{path: "", expected: false},
+		{path: "anime", expected: false},
+		{path: "anime/castle", expected: false},
+		{path: "anime//castle", expected: true},
+		{path: "/anime", expected: true},
+		{path: "anime/", expected: true},
+	}
+
+	for _, test := range tests {
+		if got := hasEmptyPathSegment(test.path); got != test.expected {
+			t.Fatalf("expected %v for %q, got %v", test.expected, test.path, got)
+		}
+	}
+}

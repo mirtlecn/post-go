@@ -158,6 +158,19 @@ func buildItemResponse(domain, path string, storedValue storage.StoredValue, ttl
 	}
 }
 
+func hasEmptyPathSegment(path string) bool {
+	if path == "" {
+		return false
+	}
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if part == "" {
+			return true
+		}
+	}
+	return false
+}
+
 func ttlMinutesFromDuration(ttlDuration time.Duration) *int64 {
 	if ttlDuration <= 0 {
 		return nil

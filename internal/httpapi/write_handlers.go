@@ -25,6 +25,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
 		return
 	}
+	pathVal = storage.NormalizePath(pathVal)
 	typeInfo, err := normalizeTypeAlias(body)
 	if err != nil {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
@@ -122,6 +123,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	pathVal, _ := storage.MustString(body, "path")
+	pathVal = storage.NormalizePath(pathVal)
 	topicVal, _ := storage.MustString(body, "topic")
 	titleVal, _ := storage.MustString(body, "title")
 	typeInfo, err := normalizeTypeAlias(body)
@@ -309,6 +311,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 }
 
 func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb redisStore, topicName string, ttlProvided bool, allowOverwrite bool) {
+	topicName = storage.NormalizePath(topicName)
 	if topicName == "" {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
 		return
@@ -367,6 +370,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 }
 
 func (h *Handler) handleTopicDelete(w http.ResponseWriter, r *http.Request, rdb redisStore, topicName string) {
+	topicName = storage.NormalizePath(topicName)
 	ctx := context.Background()
 	exists, err := h.topicExists(ctx, rdb, topicName)
 	if err != nil {

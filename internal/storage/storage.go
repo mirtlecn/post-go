@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 )
 
 const (
@@ -121,6 +122,17 @@ func MustInt(m map[string]any, key string) (int64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// NormalizePath trims leading and trailing slashes, except slash-only inputs map to "/".
+func NormalizePath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.Trim(path, "/") == "" {
+		return "/"
+	}
+	return strings.Trim(path, "/")
 }
 
 // ValidatePath checks allowed characters and length.

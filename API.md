@@ -150,6 +150,13 @@ Additional field:
 ### Path rules
 
 - if `path` is missing for normal item creation, server generates a random short path
+- all backend CRUD paths are normalized before use:
+  - non-slash-only input removes all leading `/`
+  - non-slash-only input removes all trailing `/`
+  - slash-only input such as `/` or `///` becomes `/`
+- normalized path is the only Redis key form:
+  - `path` and `path/` always map to the same key
+  - trailing slash never creates an extra key
 - allowed path characters:
   - `a-z A-Z 0-9 - _ . / ( )`
 - max path length:
@@ -191,6 +198,10 @@ Form B:
 Resolution rules:
 
 - if `topic` is provided, that topic must already exist
+- when `topic` is provided, `path` is normalized first
+- when `topic` is provided and normalized `path` contains no `/`, it is treated as `<topic>/<path>`
+- when `topic` is provided, normalized `path = "/"` is rejected
+- when `topic` is provided, empty topic members such as `anime//castle` are rejected
 - if `path` starts with an existing topic prefix, it is treated as a topic member
 - if multiple topic prefixes match, the longest existing prefix wins
 - topic item create/update returns success only after:
