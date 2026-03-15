@@ -14,8 +14,16 @@ Prerequisites:
 ```bash
 go mod tidy
 cp .env.example .env.local # The server loads env from `.env.local` first, then `.env`.
-go build ./cmd/post-server
+make
 ./post-server
+```
+
+Build commands:
+
+```bash
+make       # remove old ./post-server and rebuild
+make test  # run go test ./...
+make smoke # run ./scripts/smoke_all.sh
 ```
 
 Required env:
