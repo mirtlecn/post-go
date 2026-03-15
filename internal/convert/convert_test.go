@@ -41,4 +41,20 @@ func TestConvertMarkdownToHTMLWithOptionsAddsBackLink(t *testing.T) {
 	if !strings.Contains(output, "Back to Anime") {
 		t.Fatalf("expected topic backlink label, got %q", output)
 	}
+	if !strings.Contains(output, "◂") {
+		t.Fatalf("expected topic backlink prefix, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLWithOptionsEscapesBackLinkLabel(t *testing.T) {
+	output, err := ConvertMarkdownToHTMLWithOptions("# Hello", MarkdownOptions{
+		TopicBackLink:  "/anime",
+		TopicBackLabel: "<Anime>",
+	})
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, "Back to &lt;Anime&gt;") {
+		t.Fatalf("expected escaped topic backlink label, got %q", output)
+	}
 }

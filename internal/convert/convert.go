@@ -124,7 +124,18 @@ func buildMarkdownInput(markdown string, options MarkdownOptions) string {
 	if backLabel == "" {
 		backLabel = "Topic"
 	}
-	return "[← Back to " + backLabel + "](" + options.TopicBackLink + ")\n\n" + markdown
+	return "◂ [Back to " + escapeMarkdownLinkText(backLabel) + "](" + options.TopicBackLink + ")\n\n" + markdown
+}
+
+func escapeMarkdownLinkText(text string) string {
+	replacer := strings.NewReplacer(
+		"\\", "\\\\",
+		"<", "\\<",
+		">", "\\>",
+		"[", "\\[",
+		"]", "\\]",
+	)
+	return replacer.Replace(text)
 }
 
 func wrapHTML(body, alertsStyle, pageTitle string) string {

@@ -51,6 +51,8 @@ func main() {
 	pass("page title")
 	mustContain("topic backlink href", html, `href="/anime"`)
 	pass("topic backlink href")
+	mustContain("topic backlink prefix", html, "◂")
+	pass("topic backlink prefix")
 	mustContain("topic backlink label", html, "Back to Anime")
 	pass("topic backlink label")
 
