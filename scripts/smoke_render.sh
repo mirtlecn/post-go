@@ -53,7 +53,7 @@ func main() {
 	pass("topic backlink href")
 	mustContain("topic backlink prefix", html, "◂")
 	pass("topic backlink prefix")
-	mustContain("topic backlink label", html, "Back to Anime")
+	mustContain("topic backlink label", html, "Back to &lt;Anime&gt;")
 	pass("topic backlink label")
 
 	markdown := topic.BuildIndexMarkdown("anime", "Anime", []topic.Item{

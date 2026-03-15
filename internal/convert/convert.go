@@ -124,7 +124,7 @@ func buildMarkdownInput(markdown string, options MarkdownOptions) string {
 	if backLabel == "" {
 		backLabel = "Topic"
 	}
-	return "◂ [Back to " + escapeMarkdownLinkText(backLabel) + "](" + options.TopicBackLink + ")\n\n" + markdown
+	return "◂ [Back to \\<" + escapeMarkdownLinkText(backLabel) + "\\>](" + options.TopicBackLink + ")\n\n" + markdown
 }
 
 func escapeMarkdownLinkText(text string) string {

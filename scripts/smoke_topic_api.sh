@@ -79,7 +79,7 @@ pass "create topic item via topic"
 ITEM_HTML="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes")"
 assert_contains "$ITEM_HTML" "<title>Castle Notes</title>" "topic item title"
 assert_contains "$ITEM_HTML" "◂" "topic item backlink prefix"
-assert_contains "$ITEM_HTML" "Back to $TOPIC" "topic item backlink"
+assert_contains "$ITEM_HTML" "Back to &lt;$TOPIC&gt;" "topic item backlink"
 pass "topic item render"
 
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/screening-signup","url":"https://example.com/screening","type":"url"}'

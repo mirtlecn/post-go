@@ -539,7 +539,7 @@ Markdown conversion:
   - HTML `<title>` from stored `title`
 - topic Markdown items also get:
   - top backlink:
-    - `◂ [Back to \<topic\>](/<topic>)`
+    - `◂ [Back to \<\<topic\>\>](/<topic>)`
 
 ## Special Rules and Boundaries
 
