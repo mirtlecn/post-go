@@ -4,15 +4,31 @@
 
 - Base URL: `http://host:port`
 - Write operations require: `Authorization: Bearer <SECRET_KEY>`
-- Content storage key model:
-  - Regular item: `surl:<path>`
-  - Topic index: `surl:<topic>`
-  - Topic members: `surl:<topic>/<path>`
-  - Topic member set: `topic:<topic>:items`
+- Public read route: `GET /<path>`
+- Main management route: `GET|POST|PUT|DELETE /`
 
-## Content Model
+This service has two resource layers:
 
-Redis content values are stored as JSON:
+- regular item
+  - text, url, html, file
+- topic
+  - a namespace with its own home page and member index
+
+Examples:
+
+- regular item: `note`, `docs/intro`
+- topic home: `anime`
+- topic member: `anime/castle-notes`
+- nested topic home: `blog/2026`
+- nested topic member: `blog/2026/post-1`
+
+---
+
+## Data Model
+
+### Stored content JSON
+
+All `surl:<path>` values are stored as JSON:
 
 ```json
 {
@@ -22,10 +38,10 @@ Redis content values are stored as JSON:
 }
 ```
 
-Current stored fields:
+Current fields:
 
-- `type: string`
-- `content: string`
+- `type: string` required
+- `content: string` required
 - `title: string` optional
 
 Stored `type` values:
@@ -36,25 +52,29 @@ Stored `type` values:
 - `file`
 - `topic`
 
-Write-time alias values:
+Write-time aliases:
 
-- `md2html` -> stored as `html`
-- `qrcode` -> stored as `text`
 - `convert` is accepted as an alias of `type`
+- `md2html` writes stored `type=html`
+- `qrcode` writes stored `type=text`
 
-If both `type` and `convert` are provided:
+Normalization rules:
 
-- they must match
-- otherwise the request fails with `400 invalid_request`
+- if both `type` and `convert` are provided, they must match
+- if neither is provided:
+  - URL-like input becomes `url`
+  - other input becomes `text`
 
-## Response Shapes
+---
+
+## Response Model
 
 ### Item response
 
 Used by:
 
-- authenticated single-item lookup
-- authenticated list items
+- authenticated lookup
+- authenticated list
 - authenticated topic lookup
 - authenticated topic list
 
@@ -80,8 +100,8 @@ Fields:
 
 Rules:
 
-- successful JSON responses always include `title`
-- when the stored value has no title, the API returns `""`
+- all successful JSON responses always include `title`
+- if stored title is missing, API returns `""`
 
 ### Create / update response
 
@@ -97,14 +117,8 @@ Rules:
 }
 ```
 
-Fields:
+Additional field:
 
-- `surl: string`
-- `path: string`
-- `type: string`
-- `title: string`
-- `content: string`
-- `ttl: number | null`
 - `overwritten: string` optional
 
 ### Delete response
@@ -118,13 +132,6 @@ Fields:
 }
 ```
 
-Fields:
-
-- `deleted: string`
-- `type: string`
-- `title: string`
-- `content: string`
-
 ### Error response
 
 ```json
@@ -136,26 +143,83 @@ Fields:
 }
 ```
 
-## Authentication
+---
 
-Required for:
+## Write Rules
 
-- `POST /`
-- `PUT /`
-- `DELETE /`
-- authenticated `GET /`
+### Path rules
 
-Public access:
+- if `path` is missing for normal item creation, server generates a random short path
+- allowed path characters:
+  - `a-z A-Z 0-9 - _ . / ( )`
+- max path length:
+  - `99`
 
-- `GET /<path>`
+### TTL rules
 
-## Routes
+- TTL unit is minutes
+- `ttl` must be a natural number: `>= 0`
+- `ttl = 0` means no expiration
+- invalid TTL returns `400 invalid_request`
+- topic itself does not support TTL
 
-### `POST /`
+### Topic path resolution
 
-Create a regular item, topic, or upload a file.
+There are two ways to create a topic member:
 
-#### JSON body for regular items
+Form A:
+
+```json
+{
+  "topic": "anime",
+  "path": "castle-notes",
+  "url": "# Castle",
+  "type": "md2html"
+}
+```
+
+Form B:
+
+```json
+{
+  "path": "anime/castle-notes",
+  "url": "# Castle",
+  "type": "md2html"
+}
+```
+
+Resolution rules:
+
+- if `topic` is provided, that topic must already exist
+- if `path` starts with an existing topic prefix, it is treated as a topic member
+- if multiple topic prefixes match, the longest existing prefix wins
+
+Example:
+
+- existing topics:
+  - `blog`
+  - `blog/2026`
+- request path:
+  - `blog/2026/post-1`
+- resolved topic:
+  - `blog/2026`
+- resolved relative path:
+  - `post-1`
+
+Protection rules:
+
+- if `path=<topic>` and that topic exists, normal `POST / PUT / DELETE` are rejected
+- topic home must be managed with `type=topic`
+
+---
+
+## REST API
+
+## `POST /`
+
+Create a regular item, topic, or file upload.
+
+### JSON request
 
 ```json
 {
@@ -168,51 +232,53 @@ Create a regular item, topic, or upload a file.
 }
 ```
 
-Parameters:
+Supported fields:
 
 - `url: string` required
 - `path: string` optional
 - `title: string` optional
 - `type: string` optional
 - `convert: string` optional alias of `type`
-- `ttl: number` optional, minutes
+- `ttl: number` optional
 - `topic: string` optional
 
 Type behavior:
 
-- if omitted:
-  - URL-like values become `url`
-  - all others become `text`
-- `type=url`
-  - validates URL and normalizes surrounding spaces
-- `type=text`
+- `url`
+  - validates URL and trims surrounding spaces
+- `text`
   - stores plain text
-- `type=html`
+- `html`
   - stores raw HTML
-- `type=md2html` or `convert=md2html`
-  - converts Markdown to HTML before storing
-  - when `title` is present, generated HTML `<title>` uses stored `title`
-- `type=qrcode` or `convert=qrcode`
-  - converts text to terminal QR code before storing
-- `type=topic` or `convert=topic`
+- `md2html`
+  - converts Markdown to full HTML before storing
+  - generated HTML `<title>` uses stored `title`
+- `qrcode`
+  - converts input to terminal QR text
+- `topic`
   - creates a topic resource
 
-Regular item path rules:
+### Multipart upload
 
-- if `path` is missing, a random short path is generated
-- allowed characters:
-  - `a-z A-Z 0-9 - _ . / ( )`
-- maximum path length:
-  - `99`
+Content type:
 
-TTL rules:
+- `multipart/form-data`
 
-- item TTL is in minutes
-- `ttl` must be a natural number (`>= 0`)
-- `ttl = 0` means no expiration
-- invalid values return `400 invalid_request`
+Supported fields:
 
-#### Topic creation body
+- `file` required
+- `path` optional
+- `title` optional
+- `ttl` optional
+- `topic` optional
+
+Rules:
+
+- file uploads require configured S3-compatible storage
+- if `path` has no extension, uploaded file extension is appended
+- topic path resolution follows the same rules as JSON create
+
+### Topic creation
 
 ```json
 {
@@ -224,12 +290,12 @@ TTL rules:
 Rules:
 
 - topic must be explicitly created
-- topic does not support `ttl`
 - `path` is the topic name
 - topic home is stored at `surl:<topic>`
-- `topic:<topic>:items` is created when the topic is created
+- topic member set is stored at `topic:<topic>:items`
+- empty topic is valid
 
-Topic create response:
+Create response:
 
 ```json
 {
@@ -242,96 +308,18 @@ Topic create response:
 }
 ```
 
-#### Topic item creation
+## `PUT /`
 
-Two supported forms:
+Update an existing item, or rebuild a topic.
 
-Form A:
+### Regular update
 
-```json
-{
-  "topic": "anime",
-  "path": "castle-notes",
-  "url": "# Castle",
-  "type": "md2html",
-  "title": "Castle Notes"
-}
-```
-
-Form B:
-
-```json
-{
-  "path": "anime/castle-notes",
-  "url": "# Castle",
-  "type": "md2html",
-  "title": "Castle Notes"
-}
-```
-
-Rules:
-
-- if `topic` is set, the topic must already exist
-- if `path` begins with an existing topic prefix, it is treated as a topic item
-- when multiple topic prefixes match, the longest existing topic prefix wins
-  - example:
-    - existing topics: `blog`, `blog/2026`
-    - path: `blog/2026/post-1`
-    - resolved topic: `blog/2026`
-- if both `topic` and full topic path are given, they must match
-- topic item final path becomes `<topic>/<path>`
-
-#### Multipart upload
-
-Content type:
-
-- `multipart/form-data`
-
-Fields:
-
-- `file` required
-- `path` optional
-- `title` optional
-- `ttl` optional, natural number in minutes
-- `topic` optional
-
-Example:
-
-```bash
-curl "$POST_BASE_URL/" \
-  -X POST \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -F "file=@./photo.jpg" \
-  -F "path=poster" \
-  -F "title=Poster Pack" \
-  -F "topic=anime"
-```
-
-Rules:
-
-- file uploads require configured S3-compatible storage
-- if `path` has no extension, uploaded file extension is appended
-- `ttl` must be a natural number (`>= 0`)
-- `ttl = 0` means no expiration
-- if `topic` is present, final path becomes `<topic>/<path>`
-- if full path starts with an existing topic prefix, it is treated as a topic item
-- when multiple topic prefixes match, the longest existing topic prefix wins
-
-### `PUT /`
-
-Update an existing item or trigger topic rebuild.
-
-#### Regular update
-
-Same body shape as `POST /`.
-
-Rules:
-
+- same body shape as `POST /`
 - overwrites existing item at `path`
 - returns `200 OK`
 - `overwritten` contains previous preview or exported content
 
-#### Topic rebuild
+### Topic rebuild
 
 ```json
 {
@@ -342,14 +330,14 @@ Rules:
 
 Rules:
 
-- rebuilds topic index page from `topic:<topic>:items`
-- topic does not support `ttl`
+- rebuilds `surl:<topic>` from `topic:<topic>:items`
+- does not change child items
 
-### `DELETE /`
+## `DELETE /`
 
-Delete an item or delete a topic resource.
+Delete an item or a topic.
 
-#### Regular delete
+### Regular delete
 
 ```json
 {
@@ -361,11 +349,11 @@ Behavior:
 
 - deletes `surl:<path>`
 - if stored type is `file`, also deletes the S3 object
-- if item belongs to a topic, also:
+- if the item belongs to a topic:
   - removes member from `topic:<topic>:items`
   - rebuilds topic home
 
-#### Topic delete
+### Topic delete
 
 ```json
 {
@@ -379,34 +367,38 @@ Behavior:
 - deletes:
   - `surl:<topic>`
   - `topic:<topic>:items`
-- does not delete topic child items under `surl:<topic>/...`
-- deleting a topic returns current topic member count in `content`
+- does not delete child items under `surl:<topic>/...`
+- delete response `content` is the current topic member count as string
 
-### `GET /`
+If the same topic is later recreated:
 
-Authenticated mode.
+- existing child items under the same prefix are re-adopted into the topic index
 
-#### List all items
+## `GET /`
+
+Authenticated route.
+
+### List all items
 
 Request:
 
-- authenticated `GET /`
+- `GET /`
 - empty body
 
-Response:
+Returns:
 
 - array of item responses
 
-Notes:
+Topic entries in this list use:
 
-- topics are included in the list
-- for topic entries:
-  - `type = "topic"`
-  - `title = stored topic title`
-  - `content = current member count as string`
-  - `ttl = null`
+- `type = "topic"`
+- `title = stored topic title`
+- `content = member count as string`
+- `ttl = null`
 
-#### List all topics
+### List all topics
+
+Request body:
 
 ```json
 {
@@ -417,11 +409,15 @@ Notes:
 Returns:
 
 - array of topic item responses
-- topic data is discovered by scanning `topic:*:items`
-- each item reuses the normal item response shape
-- topic `title` is read from stored `surl:<topic>`
 
-#### Lookup one item
+Implementation note:
+
+- topic list is discovered by scanning `topic:*:items`
+- topic title is read from stored `surl:<topic>`
+
+### Lookup one item
+
+Request body:
 
 ```json
 {
@@ -429,9 +425,9 @@ Returns:
 }
 ```
 
-Returns regular item metadata.
+### Lookup one topic
 
-#### Lookup one topic
+Request body:
 
 ```json
 {
@@ -440,7 +436,7 @@ Returns regular item metadata.
 }
 ```
 
-or
+or:
 
 ```json
 {
@@ -449,7 +445,7 @@ or
 }
 ```
 
-Returns:
+Example response:
 
 ```json
 {
@@ -462,55 +458,34 @@ Returns:
 }
 ```
 
-## Public Read
-
-### `GET /<path>`
+## `GET /<path>`
 
 Public route.
 
-Behavior depends on stored type:
+Behavior by stored type:
 
 - `url`
   - `302 Found` redirect
 - `text`
-  - plain text response
+  - plain text
 - `html`
-  - HTML response
+  - rendered HTML
 - `file`
-  - streams file from S3
+  - streamed from S3
 - `topic`
-  - returns topic home HTML
+  - topic home HTML
 
-Cache behavior:
+Cache headers:
 
 - public `text`, `html`, `topic`, `url`, `file` responses set:
   - `Cache-Control: public, max-age=86400, s-maxage=86400`
-- authenticated JSON API responses do not set public cache headers
+- authenticated JSON responses do not set public cache headers
 
-## File Cache
+---
 
-Small file reads are cached in Redis.
-
-Cache keys:
-
-- `cache:file:<path>`
-- `cache:filemeta:<path>`
-
-Rules:
-
-- only used for stored `file` content
-- only used when fetched file size is less than or equal to `MAX_CONTENT_SIZE_KB`
-- cache TTL is `1 hour`
-- cache is cleared when the item is overwritten or deleted
-- larger files are streamed directly from S3 without Redis body cache
-
-## Topic Index Rendering
+## Topic Rendering Rules
 
 Topic home is generated from `topic:<topic>:items`.
-
-Notes:
-
-- topic member zset exists even for an empty topic
 
 Markdown shape:
 
@@ -528,84 +503,63 @@ Type marks:
 - `file` -> `◫`
 - `html` -> no mark
 
-Title fallback:
+Title rules:
 
 - use stored `title` when present
 - otherwise use path without topic prefix
 
-Markdown conversion:
+Markdown conversion rules:
 
-- all `md2html` content gets:
-  - HTML `<title>` from stored `title`
-- topic Markdown items also get:
-  - top backlink:
-    - `◂ [Back to \<\<topic\>\>](/<topic>)`
+- all `md2html` content writes full HTML
+- generated HTML `<title>` uses stored `title`
+- topic Markdown content also gets a top backlink:
+  - `◂ [Back to \<\<topic\>\>](/<topic>)`
 
-## Special Rules and Boundaries
-
-### Topic home protection
-
-If `path=<topic>` and the topic exists:
-
-- regular `POST / PUT / DELETE` without `type=topic` are rejected
-
-Error:
-
-```json
-{
-  "error": "topic home must be managed with `type=topic`",
-  "code": "invalid_request"
-}
-```
-
-### Topic existence
-
-- `topic` must exist before creating topic items via `topic=<topic>`
-- if `path` uses `<topic>/<path>` form:
-  - it is treated as topic content only when a matching topic prefix already exists
-  - if multiple topic prefixes match, the longest existing topic prefix is used
-
-### Topic TTL
-
-- topic itself does not support TTL
-- topic item TTL is allowed
-- expired topic items may leave stale members in `topic:<topic>:items`
+---
 
 ## Redis Storage
 
-### Content keys
+This section is the source of truth for reimplementation.
 
-- regular item:
-  - key: `surl:<path>`
-- topic home:
-  - key: `surl:<topic>`
+## Main content keys
 
-Stored value format is JSON:
+### Regular item
 
-```json
-{
-  "type": "text",
-  "content": "hello",
-  "title": "Greeting"
-}
-```
-
-Current stored fields:
-
-- `type: string`
-- `content: string`
-- `title: string` optional
+- key: `surl:<path>`
+- value: stored content JSON
 
 Examples:
 
 - `surl:note`
-- `surl:anime/castle-notes`
-- `surl:anime`
+- `surl:docs/intro`
 
-### Topic member set
+### Topic home
+
+- key: `surl:<topic>`
+- value: stored content JSON with `type=topic`
+
+Examples:
+
+- `surl:anime`
+- `surl:blog/2026`
+
+### Topic member
+
+- key: `surl:<topic>/<relative-path>`
+- value: stored content JSON
+
+Examples:
+
+- `surl:anime/castle-notes`
+- `surl:blog/2026/post-1`
+
+## Topic member index
 
 - key: `topic:<topic>:items`
 - Redis type: `zset`
+
+Semantics:
+
 - member: topic-relative path
 - score: last updated Unix timestamp in seconds
 
@@ -624,14 +578,17 @@ Implementation detail:
 - member: `__topic_placeholder__`
 - score: `0`
 
+Purpose:
+
+- keeps the topic zset key present even when the topic is empty
+
 Rules:
 
-- this placeholder keeps the `zset` key present even when the topic has no real items
 - topic count ignores the placeholder
-- topic index rendering ignores the placeholder
+- topic rendering ignores the placeholder
 - topic list and topic lookup do not expose the placeholder
 
-### File cache keys
+## File cache keys
 
 - `cache:file:<path>`
 - `cache:filemeta:<path>`
@@ -639,15 +596,17 @@ Rules:
 Rules:
 
 - only used for stored `file` items
+- only used for small file reads
 - cache TTL is `1 hour`
 - cache is cleared on overwrite and delete
-- topic count and index are only corrected on later topic writes
 
-### Topic recreation
+Important boundary:
 
-If a topic is deleted and later recreated:
+- topic count and topic index are not actively repaired on TTL expiration
+- expired topic items may leave stale members in `topic:<topic>:items`
+- count and index are corrected only on later topic writes
 
-- existing child items under the same prefix are re-adopted into the topic index
+---
 
 ## Export Mode
 
@@ -668,9 +627,11 @@ Supported on:
 Behavior:
 
 - regular items:
-  - `content` becomes full content instead of preview
+  - `content` returns full content instead of preview
 - topics:
   - current implementation still returns member count string in `content`
+
+---
 
 ## Common Error Codes
 
