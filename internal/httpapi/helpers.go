@@ -129,6 +129,13 @@ func setStoredValueWithTTL(ctx context.Context, rdb redisStore, key, storedValue
 	return ttlMinutes, nil
 }
 
+func restoreStoredValueWithTTL(ctx context.Context, rdb redisStore, key, storedValue string, previousTTL time.Duration) error {
+	if previousTTL > 0 {
+		return rdb.SetEx(ctx, key, storedValue, previousTTL).Err()
+	}
+	return rdb.Set(ctx, key, storedValue, 0).Err()
+}
+
 func isExportRequest(r *http.Request) bool {
 	return strings.ToLower(r.Header.Get("x-export")) == "true"
 }

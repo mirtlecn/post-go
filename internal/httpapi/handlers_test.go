@@ -100,10 +100,20 @@ func (f *fakeRedisStore) SetEx(ctx context.Context, key string, value any, expir
 }
 
 func (f *fakeRedisStore) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	if f.getResults != nil {
+		for _, key := range keys {
+			delete(f.getResults, key)
+		}
+	}
 	return redis.NewIntResult(int64(len(keys)), f.delErr)
 }
 
 func (f *fakeRedisStore) Unlink(ctx context.Context, keys ...string) *redis.IntCmd {
+	if f.getResults != nil {
+		for _, key := range keys {
+			delete(f.getResults, key)
+		}
+	}
 	return redis.NewIntResult(int64(len(keys)), f.unlinkErr)
 }
 
@@ -417,6 +427,28 @@ func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateRollsBackTopicItemWhenTopicSyncFails(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+		zaddErr: errors.New("zadd failed"),
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"topic":"anime","path":"castle","url":"# Castle","type":"md2html","title":"Castle"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.Code)
+	}
+	if _, ok := store.getResults["surl:anime/castle"]; ok {
+		t.Fatalf("expected topic item key to be rolled back, got %+v", store.getResults)
+	}
+}
+
 func TestResolveTopicPathUsesLongestExistingTopicPrefix(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -721,6 +753,31 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	}
 	if body.Title != "" {
 		t.Fatalf("expected empty title, got %q", body.Title)
+	}
+}
+
+func TestHandleFileUploadRollsBackWhenTopicSyncFails(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+		zaddErr: errors.New("zadd failed"),
+	}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"topic": "anime", "path": "note"}, "note.txt", "hello")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.Code)
+	}
+	if _, ok := store.getResults["surl:anime/note.txt"]; ok {
+		t.Fatalf("expected rolled back file key, got %+v", store.getResults)
+	}
+	if len(fileStore.deleteCalls) != 1 || fileStore.deleteCalls[0] != "post/default/uploaded.txt" {
+		t.Fatalf("expected uploaded object cleanup, got %+v", fileStore.deleteCalls)
 	}
 }
 

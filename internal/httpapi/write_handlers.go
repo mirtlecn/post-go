@@ -239,6 +239,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		Title:   titleVal,
 	})
 	existing, _ := rdb.Get(ctx, key).Result()
+	existingTTL, _ := rdb.TTL(ctx, key).Result()
 	isExport := isExportRequest(r)
 	if existing != "" && !allowOverwrite {
 		existingValue := storage.ParseStoredValue(existing)
@@ -274,23 +275,37 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		result.Overwritten = responseContent(existingValue.Type, existingValue.Content, isExport)
 	}
 
-	status := http.StatusCreated
-	if allowOverwrite && existing != "" {
-		status = http.StatusOK
-	}
-	utils.JSON(w, status, result)
 	if resolvedPath.IsTopicItem {
 		if err := rdb.ZAdd(ctx, topicItemsKey(resolvedPath.TopicName), redis.Z{
 			Score:  float64(time.Now().Unix()),
 			Member: resolvedPath.RelativePath,
 		}).Err(); err != nil {
 			requestLogger{}.Errorf("topic zadd failed: %v", err)
+			if existing != "" {
+				_ = restoreStoredValueWithTTL(ctx, rdb, key, existing, existingTTL)
+			} else {
+				_ = rdb.Del(ctx, key).Err()
+			}
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 			return
 		}
 		if err := h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
 			requestLogger{}.Errorf("topic rebuild failed: %v", err)
+			_ = rdb.ZRem(ctx, topicItemsKey(resolvedPath.TopicName), resolvedPath.RelativePath).Err()
+			if existing != "" {
+				_ = restoreStoredValueWithTTL(ctx, rdb, key, existing, existingTTL)
+			} else {
+				_ = rdb.Del(ctx, key).Err()
+			}
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
 		}
 	}
+	status := http.StatusCreated
+	if allowOverwrite && existing != "" {
+		status = http.StatusOK
+	}
+	utils.JSON(w, status, result)
 }
 
 func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb redisStore, topicName string, ttlProvided bool, allowOverwrite bool) {

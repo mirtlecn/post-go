@@ -193,6 +193,10 @@ Resolution rules:
 - if `topic` is provided, that topic must already exist
 - if `path` starts with an existing topic prefix, it is treated as a topic member
 - if multiple topic prefixes match, the longest existing prefix wins
+- topic item create/update returns success only after:
+  - item content is stored
+  - `topic:<topic>:items` is updated
+  - topic home is rebuilt
 
 Example:
 

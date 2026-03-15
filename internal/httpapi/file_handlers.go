@@ -143,6 +143,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Content: objectKey,
 		Title:   titleVal,
 	})
+	existingTTL, _ := rdb.TTL(ctx, key).Result()
 	ttlResponse, err := setStoredValueWithTTL(ctx, rdb, key, storedValue, ttlMinutes, ttlProvided)
 	if err != nil {
 		h.handleUploadPersistenceFailure(ctx, client, objectKey, err)
@@ -150,6 +151,30 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 
+	if resolvedPath.IsTopicItem {
+		if err := rdb.ZAdd(ctx, topicItemsKey(resolvedPath.TopicName), redis.Z{
+			Score:  float64(time.Now().Unix()),
+			Member: resolvedPath.RelativePath,
+		}).Err(); err != nil {
+			_ = rdb.Del(ctx, key).Err()
+			if existing != "" {
+				_ = restoreStoredValueWithTTL(ctx, rdb, key, existing, existingTTL)
+			}
+			_ = client.DeleteObject(ctx, objectKey)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
+		if err := h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
+			_ = rdb.ZRem(ctx, topicItemsKey(resolvedPath.TopicName), resolvedPath.RelativePath).Err()
+			_ = rdb.Del(ctx, key).Err()
+			if existing != "" {
+				_ = restoreStoredValueWithTTL(ctx, rdb, key, existing, existingTTL)
+			}
+			_ = client.DeleteObject(ctx, objectKey)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
+	}
 	status := http.StatusCreated
 	if allowOverwrite && existing != "" {
 		status = http.StatusOK
@@ -163,14 +188,6 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Content: responseContent("file", objectKey, isExport),
 		TTL:     ttlResponse,
 	})
-	if resolvedPath.IsTopicItem {
-		if err := rdb.ZAdd(ctx, topicItemsKey(resolvedPath.TopicName), redis.Z{
-			Score:  float64(time.Now().Unix()),
-			Member: resolvedPath.RelativePath,
-		}).Err(); err == nil {
-			_ = h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName)
-		}
-	}
 }
 
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, objectKey string) {
