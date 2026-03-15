@@ -134,6 +134,16 @@ assert_status 400 "ttl string rejected"
 assert_jq '.error == "`ttl` must be a natural number"' "ttl string rejected message"
 pass "ttl string rejected"
 
+api_json POST "$POST_BASE_URL/" '{"url":"https://example.com/topic","path":"'"$SMOKE_PREFIX"'-ttl-live","ttl":3,"type":"url"}'
+assert_status 201 "ttl positive create"
+assert_jq '.ttl == 3' "ttl positive create body"
+pass "ttl positive create"
+
+api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-ttl-live"}'
+assert_status 200 "lookup ttl positive"
+assert_jq '.ttl == 3' "lookup ttl positive body"
+pass "lookup ttl positive"
+
 api_json GET "$POST_BASE_URL/" ''
 assert_status 200 "list items"
 assert_jq 'map(.path) | index("'"$SMOKE_PREFIX"'-text") != null' "list includes text item"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -148,6 +149,17 @@ func buildItemResponse(domain, path string, storedValue storage.StoredValue, ttl
 		TTL:     ttl,
 		Content: responseContent(storedValue.Type, storedValue.Content, isExport),
 	}
+}
+
+func ttlMinutesFromDuration(ttlDuration time.Duration) *int64 {
+	if ttlDuration <= 0 {
+		return nil
+	}
+	ttlMinutes := int64(math.Ceil(ttlDuration.Minutes()))
+	if ttlMinutes < 1 {
+		ttlMinutes = 1
+	}
+	return &ttlMinutes
 }
 
 func itoa(v int) string {

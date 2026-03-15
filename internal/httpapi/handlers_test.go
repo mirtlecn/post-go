@@ -552,6 +552,33 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	}
 }
 
+func TestHandleLookupAuthedReturnsTTLForExpiringItem(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"url","content":"https://example.com","title":"Greeting"}`},
+		},
+		ttlResult: 3 * time.Minute,
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"note"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected lookup to be handled")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.TTL == nil || *body.TTL != 3 {
+		t.Fatalf("expected ttl 3, got %+v", body)
+	}
+}
+
 func TestHandleDeleteRejectsTopicHomeWithoutTopicType(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{

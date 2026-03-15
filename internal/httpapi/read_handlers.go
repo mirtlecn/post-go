@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -152,8 +151,14 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
+	ttlDuration, err := rdb.TTL(ctx, storage.LinksPrefix+path).Result()
+	if err != nil {
+		requestLogger{}.Warnf("lookup ttl failed: %s (%v)", path, err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
 	storedValue := storage.ParseStoredValue(stored)
-	utils.JSON(w, http.StatusOK, buildItemResponse(storage.GetDomain(r), path, storedValue, nil, isExportRequest(r)))
+	utils.JSON(w, http.StatusOK, buildItemResponse(storage.GetDomain(r), path, storedValue, ttlMinutesFromDuration(ttlDuration), isExportRequest(r)))
 }
 
 func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path string) {
@@ -230,14 +235,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		storedValue := storage.ParseStoredValue(stored)
 		content := responseContent(storedValue.Type, storedValue.Content, isExport)
-		var ttl *int64
-		if ttlSeconds > 0 {
-			ttlMinutes := int64(math.Ceil(ttlSeconds.Minutes()))
-			if ttlMinutes < 1 {
-				ttlMinutes = 1
-			}
-			ttl = &ttlMinutes
-		}
+		ttl := ttlMinutesFromDuration(ttlSeconds)
 		if storedValue.Type == topicType {
 			count, err := countTopicItems(ctx, rdb, path)
 			if err != nil {
