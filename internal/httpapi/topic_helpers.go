@@ -97,17 +97,19 @@ func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicNam
 			ExistingTopic: true,
 		}, nil
 	}
-	parts := strings.SplitN(pathVal, "/", 2)
-	if len(parts) == 2 {
-		exists, err := h.topicExists(ctx, rdb, parts[0])
+	parts := strings.Split(pathVal, "/")
+	for prefixLength := len(parts) - 1; prefixLength >= 1; prefixLength-- {
+		topicPrefix := strings.Join(parts[:prefixLength], "/")
+		relativePath := strings.Join(parts[prefixLength:], "/")
+		exists, err := h.topicExists(ctx, rdb, topicPrefix)
 		if err != nil {
 			return resolved, err
 		}
 		if exists {
 			return resolvedTopicPath{
 				IsTopicItem:   true,
-				TopicName:     parts[0],
-				RelativePath:  parts[1],
+				TopicName:     topicPrefix,
+				RelativePath:  relativePath,
 				FullPath:      pathVal,
 				ExistingTopic: true,
 			}, nil

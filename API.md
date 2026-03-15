@@ -273,6 +273,11 @@ Rules:
 
 - if `topic` is set, the topic must already exist
 - if `path` begins with an existing topic prefix, it is treated as a topic item
+- when multiple topic prefixes match, the longest existing topic prefix wins
+  - example:
+    - existing topics: `blog`, `blog/2026`
+    - path: `blog/2026/post-1`
+    - resolved topic: `blog/2026`
 - if both `topic` and full topic path are given, they must match
 - topic item final path becomes `<topic>/<path>`
 
@@ -310,6 +315,7 @@ Rules:
 - `ttl = 0` means no expiration
 - if `topic` is present, final path becomes `<topic>/<path>`
 - if full path starts with an existing topic prefix, it is treated as a topic item
+- when multiple topic prefixes match, the longest existing topic prefix wins
 
 ### `PUT /`
 
@@ -556,13 +562,85 @@ Error:
 
 - `topic` must exist before creating topic items via `topic=<topic>`
 - if `path` uses `<topic>/<path>` form:
-  - it is treated as topic content only when `<topic>` already exists
+  - it is treated as topic content only when a matching topic prefix already exists
+  - if multiple topic prefixes match, the longest existing topic prefix is used
 
 ### Topic TTL
 
 - topic itself does not support TTL
 - topic item TTL is allowed
 - expired topic items may leave stale members in `topic:<topic>:items`
+
+## Redis Storage
+
+### Content keys
+
+- regular item:
+  - key: `surl:<path>`
+- topic home:
+  - key: `surl:<topic>`
+
+Stored value format is JSON:
+
+```json
+{
+  "type": "text",
+  "content": "hello",
+  "title": "Greeting"
+}
+```
+
+Current stored fields:
+
+- `type: string`
+- `content: string`
+- `title: string` optional
+
+Examples:
+
+- `surl:note`
+- `surl:anime/castle-notes`
+- `surl:anime`
+
+### Topic member set
+
+- key: `topic:<topic>:items`
+- Redis type: `zset`
+- member: topic-relative path
+- score: last updated Unix timestamp in seconds
+
+Example:
+
+- key: `topic:anime:items`
+- member: `castle-notes`
+- score: `1797984000`
+
+### Empty topic placeholder
+
+Empty topics still create a `zset`.
+
+Implementation detail:
+
+- member: `__topic_placeholder__`
+- score: `0`
+
+Rules:
+
+- this placeholder keeps the `zset` key present even when the topic has no real items
+- topic count ignores the placeholder
+- topic index rendering ignores the placeholder
+- topic list and topic lookup do not expose the placeholder
+
+### File cache keys
+
+- `cache:file:<path>`
+- `cache:filemeta:<path>`
+
+Rules:
+
+- only used for stored `file` items
+- cache TTL is `1 hour`
+- cache is cleared on overwrite and delete
 - topic count and index are only corrected on later topic writes
 
 ### Topic recreation

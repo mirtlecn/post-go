@@ -154,4 +154,25 @@ assert_status 200 "lookup recreated topic"
 assert_jq '.content == "2"' "lookup recreated topic count"
 pass "lookup recreated topic"
 
+NESTED_TOPIC="$TOPIC/2026"
+api_json POST "$POST_BASE_URL/" '{"path":"'"$NESTED_TOPIC"'","type":"topic"}'
+assert_status 201 "create nested topic"
+assert_jq '.title == "'"$NESTED_TOPIC"'"' "create nested topic title"
+pass "create nested topic"
+
+api_json POST "$POST_BASE_URL/" '{"path":"'"$NESTED_TOPIC"'/post-1","url":"nested body","type":"text"}'
+assert_status 201 "nested topic full path matches longest prefix"
+assert_jq '.path == "'"$NESTED_TOPIC"'/post-1"' "nested topic full path response"
+pass "nested topic full path matches longest prefix"
+
+api_json GET "$POST_BASE_URL/" '{"path":"'"$NESTED_TOPIC"'","type":"topic"}'
+assert_status 200 "nested topic count after full path create"
+assert_jq '.content == "1"' "nested topic count after full path create body"
+pass "nested topic count after full path create"
+
+api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
+assert_status 200 "parent topic count excludes nested topic item"
+assert_jq '.content == "2"' "parent topic count excludes nested topic item body"
+pass "parent topic count excludes nested topic item"
+
 echo "Topic API smoke checks completed successfully."

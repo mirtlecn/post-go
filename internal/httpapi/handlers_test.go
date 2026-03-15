@@ -413,6 +413,47 @@ func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
 	}
 }
 
+func TestResolveTopicPathUsesLongestExistingTopicPrefix(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:blog":      {value: `{"type":"topic","content":"<html></html>","title":"blog"}`},
+			"surl:blog/2026": {value: `{"type":"topic","content":"<html></html>","title":"blog/2026"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	resolved, err := handler.resolveTopicPath(context.Background(), store, "", "blog/2026/post-1")
+	if err != nil {
+		t.Fatalf("expected resolve to succeed, got %v", err)
+	}
+	if !resolved.IsTopicItem {
+		t.Fatalf("expected topic item, got %+v", resolved)
+	}
+	if resolved.TopicName != "blog/2026" {
+		t.Fatalf("expected nested topic prefix, got %+v", resolved)
+	}
+	if resolved.RelativePath != "post-1" {
+		t.Fatalf("expected relative path post-1, got %+v", resolved)
+	}
+}
+
+func TestResolveTopicPathFallsBackToShorterTopicPrefix(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:blog": {value: `{"type":"topic","content":"<html></html>","title":"blog"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	resolved, err := handler.resolveTopicPath(context.Background(), store, "", "blog/2027/post-1")
+	if err != nil {
+		t.Fatalf("expected resolve to succeed, got %v", err)
+	}
+	if resolved.TopicName != "blog" || resolved.RelativePath != "2027/post-1" {
+		t.Fatalf("unexpected resolved path: %+v", resolved)
+	}
+}
+
 func TestHandleJSONCreateConflictIncludesExistingTitle(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
