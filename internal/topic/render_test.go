@@ -83,3 +83,23 @@ func TestRenderIndexHTMLUsesPageTitle(t *testing.T) {
 		t.Fatalf("expected absolute topic href, got %q", html)
 	}
 }
+
+func TestBuildIndexMarkdownUsesRootAbsoluteHrefForNestedTopic(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "post-1",
+			Type:      "text",
+			Title:     "Post 1",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	output := BuildIndexMarkdown("blog/2026", "blog/2026", items)
+
+	if !strings.Contains(output, "[Post 1](/blog/2026/post-1) ☰ 2026-12-23") {
+		t.Fatalf("expected nested topic link to stay root-absolute, got %q", output)
+	}
+	if strings.Contains(output, "](post-1)") {
+		t.Fatalf("expected topic index to avoid browser-dependent relative href, got %q", output)
+	}
+}

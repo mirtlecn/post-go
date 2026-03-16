@@ -1,6 +1,7 @@
 package topic
 
 import (
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -40,10 +41,8 @@ func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 	for _, item := range sorted {
 		builder.WriteString("- [")
 		builder.WriteString(displayTitle(topicPath, item))
-		builder.WriteString("](/")
-		builder.WriteString(topicPath)
-		builder.WriteString("/")
-		builder.WriteString(item.Path)
+		builder.WriteString("](")
+		builder.WriteString(buildTopicItemHref(topicPath, item.Path))
 		builder.WriteString(")")
 		if mark := typeMark(item.Type); mark != "" {
 			builder.WriteString(" ")
@@ -63,6 +62,10 @@ func RenderIndexHTML(topicPath, topicTitle string, items []Item) (string, error)
 		BuildIndexMarkdown(topicPath, topicTitle, items),
 		convert.MarkdownOptions{PageTitle: topicTitle},
 	)
+}
+
+func buildTopicItemHref(topicPath, itemPath string) string {
+	return path.Join("/", topicPath, itemPath)
 }
 
 func displayTitle(topicName string, item Item) string {
