@@ -42,7 +42,7 @@ func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 		builder.WriteString("- [")
 		builder.WriteString(displayTitle(topicPath, item))
 		builder.WriteString("](")
-		builder.WriteString(buildTopicItemHref(topicPath, item.Path))
+		builder.WriteString(formatMarkdownLinkDestination(buildTopicItemHref(topicPath, item.Path)))
 		builder.WriteString(")")
 		if mark := typeMark(item.Type); mark != "" {
 			builder.WriteString(" ")
@@ -66,6 +66,10 @@ func RenderIndexHTML(topicPath, topicTitle string, items []Item) (string, error)
 
 func buildTopicItemHref(topicPath, itemPath string) string {
 	return path.Join("/", topicPath, itemPath)
+}
+
+func formatMarkdownLinkDestination(destination string) string {
+	return "<" + destination + ">"
 }
 
 func displayTitle(topicName string, item Item) string {

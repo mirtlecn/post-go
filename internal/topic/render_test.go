@@ -33,9 +33,9 @@ func TestBuildIndexMarkdownSortsByUpdatedAtAsFlatList(t *testing.T) {
 	expected := strings.Join([]string{
 		"# Anime",
 		"",
-		"- [Howl Visual Draft](/anime/howl-visual) 2026-12-23",
-		"- [Castle in the Sky Notes](/anime/castle-notes) ☰ 2026-12-21",
-		"- [Poster Pack Winter](/anime/poster-pack-winter.zip) ◫ 2025-10-18",
+		"- [Howl Visual Draft](</anime/howl-visual>) 2026-12-23",
+		"- [Castle in the Sky Notes](</anime/castle-notes>) ☰ 2026-12-21",
+		"- [Poster Pack Winter](</anime/poster-pack-winter.zip>) ◫ 2025-10-18",
 		"",
 	}, "\n")
 
@@ -56,8 +56,25 @@ func TestBuildIndexMarkdownUsesFullPathFallbackForEmptyTitle(t *testing.T) {
 
 	output := BuildIndexMarkdown("anime", "anime", items)
 
-	if !strings.Contains(output, "[notes/howl-visual](/anime/notes/howl-visual) ↗ 2026-12-23") {
+	if !strings.Contains(output, "[notes/howl-visual](</anime/notes/howl-visual>) ↗ 2026-12-23") {
 		t.Fatalf("expected fallback title from full path, got %q", output)
+	}
+}
+
+func TestBuildIndexMarkdownWrapsHrefDestinationForSpecialCharacters(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "drafts/hello-(world)",
+			Type:      "text",
+			Title:     "Hello",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	if !strings.Contains(output, "[Hello](</anime/drafts/hello-(world)>) ☰ 2026-12-23") {
+		t.Fatalf("expected markdown destination to be wrapped for special characters, got %q", output)
 	}
 }
 
@@ -96,7 +113,7 @@ func TestBuildIndexMarkdownUsesRootAbsoluteHrefForNestedTopic(t *testing.T) {
 
 	output := BuildIndexMarkdown("blog/2026", "blog/2026", items)
 
-	if !strings.Contains(output, "[Post 1](/blog/2026/post-1) ☰ 2026-12-23") {
+	if !strings.Contains(output, "[Post 1](</blog/2026/post-1>) ☰ 2026-12-23") {
 		t.Fatalf("expected nested topic link to stay root-absolute, got %q", output)
 	}
 	if strings.Contains(output, "](post-1)") {
