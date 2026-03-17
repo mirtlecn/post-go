@@ -127,7 +127,7 @@ func buildMarkdownInput(markdown string, options MarkdownOptions) string {
 		backLabel = "Topic"
 	}
 	var builder strings.Builder
-	builder.WriteString("<div style=\"font-size: 1.25em; font-weight: bold\">")
+	builder.WriteString("<div style=\"font-size: 1.3em; font-weight: bold\">")
 	builder.WriteString(html.EscapeString(CapitalizeTopicLabel(backLabel)))
 	builder.WriteString("</div>\n\n")
 	builder.WriteString("[**Home**](")

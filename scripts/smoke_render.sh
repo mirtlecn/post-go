@@ -51,7 +51,7 @@ func main() {
 	pass("page title")
 	mustContain("topic backlink href", html, `href="/anime"`)
 	pass("topic backlink href")
-	mustContain("topic heading", html, "<div style=\"font-size: 1.25em; font-weight: bold\">Anime</div>")
+	mustContain("topic heading", html, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime</div>")
 	pass("topic heading")
 	mustContain("topic home label", html, "<strong>Home</strong>")
 	pass("topic home label")

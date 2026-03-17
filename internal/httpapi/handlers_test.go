@@ -830,7 +830,7 @@ func TestHandleJSONCreateUsesStoredTopicTitleForMarkdownBacklink(t *testing.T) {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
 	stored := storage.ParseStoredValue(store.setValues[0])
-	if !strings.Contains(stored.Content, "<div style=\"font-size: 1.25em; font-weight: bold\">Anime Archive</div>") {
+	if !strings.Contains(stored.Content, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>") {
 		t.Fatalf("expected markdown header to use stored topic title, got %q", stored.Content)
 	}
 	if !strings.Contains(stored.Content, `href="/anime"`) {

@@ -36,7 +36,7 @@ func TestConvertMarkdownToHTMLWithOptionsAddsBackLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected conversion to succeed, got %v", err)
 	}
-	if !strings.Contains(output, "<div style=\"font-size: 1.25em; font-weight: bold\">Anime</div>") {
+	if !strings.Contains(output, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime</div>") {
 		t.Fatalf("expected topic heading, got %q", output)
 	}
 	if !strings.Contains(output, `href="/anime"`) {
@@ -58,7 +58,7 @@ func TestConvertMarkdownToHTMLWithOptionsEscapesBackLinkLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected conversion to succeed, got %v", err)
 	}
-	if !strings.Contains(output, "<div style=\"font-size: 1.25em; font-weight: bold\">&lt;Anime&gt;</div>") {
+	if !strings.Contains(output, "<div style=\"font-size: 1.3em; font-weight: bold\">&lt;Anime&gt;</div>") {
 		t.Fatalf("expected escaped topic heading label, got %q", output)
 	}
 }

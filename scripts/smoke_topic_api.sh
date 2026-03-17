@@ -78,7 +78,7 @@ pass "create topic item via topic"
 
 ITEM_HTML="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes")"
 assert_contains "$ITEM_HTML" "<title>Castle Notes</title>" "topic item title"
-assert_contains "$ITEM_HTML" "<div style=\"font-size: 1.25em; font-weight: bold\">Anime Archive</div>" "topic item header"
+assert_contains "$ITEM_HTML" "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>" "topic item header"
 assert_contains "$ITEM_HTML" "href=\"/$TOPIC\"" "topic item backlink href"
 assert_contains "$ITEM_HTML" "<strong>Home</strong>" "topic item home link label"
 pass "topic item render"
