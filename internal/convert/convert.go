@@ -218,7 +218,7 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		"<link rel=\"stylesheet\" href=\"" + cssURL + "\">\n" +
 		extraHead.String() +
 		"<style>\n" +
-		"  body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; }\n" +
+		"  body { box-sizing: border-box; min-width: 200px; max-width: 838px; margin: 0 auto; padding: 45px; }\n" +
 		"  .markdown-body .markdown-alert { padding: 0.5rem 1rem; }\n" +
 		alertsStyle + "\n" +
 		"  @media (prefers-color-scheme: dark) { body { background-color: " + darkBg + "; } }\n" +
