@@ -172,7 +172,8 @@ func CapitalizeTopicLabel(label string) string {
 
 func wrapHTML(body, alertsStyle, pageTitle string) string {
 	// 基础资源
-	cssURL := "https://cdn.jsdelivr.net/gh/sindresorhus/github-markdown-css/github-markdown.min.css"
+	cssURL := "https://cdn.jsdelivr.net/gh/mirtlecn/public/ravel-gfm.min.css"
+	// cssURL := "https://cdn.jsdelivr.net/gh/sindresorhus/github-markdown-css/github-markdown.min.css"
 	darkBg := "#0d1117"
 
 	// 外部资源定义
