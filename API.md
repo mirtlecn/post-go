@@ -165,8 +165,9 @@ Additional field:
 ### TTL rules
 
 - TTL unit is minutes
-- `ttl` must be a natural number: `>= 0`
+- `ttl` must be an integer between `0` and `525600`
 - `ttl = 0` means no expiration
+- `525600` minutes equals `365` days
 - invalid TTL returns `400 invalid_request`
 - topic itself does not support TTL
 

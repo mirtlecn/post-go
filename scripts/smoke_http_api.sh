@@ -139,6 +139,11 @@ assert_status 201 "ttl positive create"
 assert_jq '.ttl == 3' "ttl positive create body"
 pass "ttl positive create"
 
+api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-too-large","ttl":525601}'
+assert_status 400 "ttl too large rejected"
+assert_jq '.error == "`ttl` must be between 0 and 525600 minutes"' "ttl too large rejected message"
+pass "ttl too large rejected"
+
 api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-ttl-live"}'
 assert_status 200 "lookup ttl positive"
 assert_jq '.ttl == 3' "lookup ttl positive body"
@@ -227,6 +232,23 @@ if ! jq -e '.error == "`ttl` must be a natural number"' >/dev/null <<<"$(cat "$F
   fail "file upload bad ttl message" "body: $(cat "$FILE_BAD_TTL_BODY")"
 fi
 pass "file upload bad ttl"
+
+FILE_TOO_LARGE_TTL_BODY="$TMP_DIR/file-too-large-ttl.body"
+FILE_TOO_LARGE_TTL_STATUS="$TMP_DIR/file-too-large-ttl.status"
+curl -sS -o "$FILE_TOO_LARGE_TTL_BODY" -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "file=@$FILE_PATH;type=text/plain" \
+  -F "path=$SMOKE_PREFIX-file-too-large-ttl" \
+  -F "ttl=525601" \
+  "$POST_BASE_URL/" >"$FILE_TOO_LARGE_TTL_STATUS"
+if [[ "$(cat "$FILE_TOO_LARGE_TTL_STATUS")" != "400" ]]; then
+  fail "file upload ttl too large" "body: $(cat "$FILE_TOO_LARGE_TTL_BODY")"
+fi
+if ! jq -e '.error == "`ttl` must be between 0 and 525600 minutes"' >/dev/null <<<"$(cat "$FILE_TOO_LARGE_TTL_BODY")"; then
+  fail "file upload ttl too large message" "body: $(cat "$FILE_TOO_LARGE_TTL_BODY")"
+fi
+pass "file upload ttl too large"
 
 FILE_PUBLIC="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file.txt")"
 assert_contains "$FILE_PUBLIC" "upload-body" "public file read"

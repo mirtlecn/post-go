@@ -16,6 +16,7 @@ func TestParseTTLValueHandlesSupportedForms(t *testing.T) {
 		{name: "int zero", input: 0, expected: 0, provided: true},
 		{name: "int64 positive", input: int64(3), expected: 3, provided: true},
 		{name: "json number", input: json.Number("12"), expected: 12, provided: true},
+		{name: "max value", input: json.Number("525600"), expected: maxTTLMinutes, provided: true},
 	}
 
 	for _, test := range tests {
@@ -35,6 +36,7 @@ func TestParseTTLValueRejectsInvalidForms(t *testing.T) {
 		int64(-1),
 		json.Number("-1"),
 		json.Number("1.5"),
+		json.Number("525601"),
 		"10",
 		true,
 		false,
@@ -59,6 +61,7 @@ func TestParseTTLFormValueHandlesSupportedForms(t *testing.T) {
 		{name: "empty", input: "", expected: 0, provided: false},
 		{name: "zero", input: "0", expected: 0, provided: true},
 		{name: "positive", input: "15", expected: 15, provided: true},
+		{name: "max value", input: "525600", expected: maxTTLMinutes, provided: true},
 	}
 
 	for _, test := range tests {
@@ -73,11 +76,29 @@ func TestParseTTLFormValueHandlesSupportedForms(t *testing.T) {
 }
 
 func TestParseTTLFormValueRejectsInvalidForms(t *testing.T) {
-	invalidValues := []string{"-1", "1.5", "abc", "10m"}
+	invalidValues := []string{"-1", "1.5", "abc", "10m", "525601"}
 
 	for _, input := range invalidValues {
 		if _, _, err := parseTTLFormValue(input); err == nil {
 			t.Fatalf("expected ttl form input %q to be rejected", input)
+		}
+	}
+}
+
+func TestTTLSecondsFromMinutes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    int64
+		expected int64
+	}{
+		{name: "zero", input: 0, expected: 0},
+		{name: "positive", input: 3, expected: 180},
+		{name: "max", input: maxTTLMinutes, expected: maxTTLSeconds},
+	}
+
+	for _, test := range tests {
+		if got := ttlSecondsFromMinutes(test.input); got != test.expected {
+			t.Fatalf("%s: expected %d, got %d", test.name, test.expected, got)
 		}
 	}
 }

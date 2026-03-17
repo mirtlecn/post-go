@@ -108,7 +108,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 
 	var ttlSeconds int64
 	if ttlProvided && ttlMinutes > 0 {
-		ttlSeconds = ttlMinutes * 60
+		ttlSeconds = ttlSecondsFromMinutes(ttlMinutes)
 	}
 
 	conf := h.Cfg.S3Config()

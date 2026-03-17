@@ -13,7 +13,11 @@ import (
 	"post-go/internal/storage"
 )
 
-const topicHomeManagedError = "topic home must be managed with `type=topic`"
+const (
+	topicHomeManagedError = "topic home must be managed with `type=topic`"
+	maxTTLMinutes         = int64(525600)
+	maxTTLSeconds         = int64(31536000)
+)
 
 func randomPath() string {
 	chars := "23456789abcdefghjkmnpqrstuvwxyz"
@@ -80,27 +84,34 @@ func parseInt64(s string) (int64, error) {
 	return n, nil
 }
 
+func validateTTLMinutes(ttlMinutes int64) (int64, error) {
+	if ttlMinutes < 0 {
+		return 0, errors.New("`ttl` must be a natural number")
+	}
+	if ttlMinutes > maxTTLMinutes {
+		return 0, errors.New("`ttl` must be between 0 and 525600 minutes")
+	}
+	return ttlMinutes, nil
+}
+
 func parseTTLValue(ttlValue any) (int64, bool, error) {
 	if ttlValue == nil {
 		return 0, false, nil
 	}
 	switch value := ttlValue.(type) {
 	case int64:
-		if value < 0 {
-			return 0, true, errors.New("`ttl` must be a natural number")
-		}
-		return value, true, nil
+		ttlMinutes, err := validateTTLMinutes(value)
+		return ttlMinutes, true, err
 	case int:
-		if value < 0 {
-			return 0, true, errors.New("`ttl` must be a natural number")
-		}
-		return int64(value), true, nil
+		ttlMinutes, err := validateTTLMinutes(int64(value))
+		return ttlMinutes, true, err
 	default:
 		ttlMinutes, ok := storage.MustInt(map[string]any{"ttl": ttlValue}, "ttl")
-		if !ok || ttlMinutes < 0 {
+		if !ok {
 			return 0, true, errors.New("`ttl` must be a natural number")
 		}
-		return ttlMinutes, true, nil
+		ttlMinutes, err := validateTTLMinutes(ttlMinutes)
+		return ttlMinutes, true, err
 	}
 }
 
@@ -112,7 +123,19 @@ func parseTTLFormValue(ttlValue string) (int64, bool, error) {
 	if err != nil {
 		return 0, true, errors.New("`ttl` must be a natural number")
 	}
-	return ttlMinutes, true, nil
+	ttlMinutes, err = validateTTLMinutes(ttlMinutes)
+	return ttlMinutes, true, err
+}
+
+func ttlSecondsFromMinutes(ttlMinutes int64) int64 {
+	if ttlMinutes <= 0 {
+		return 0
+	}
+	ttlSeconds := ttlMinutes * 60
+	if ttlSeconds > maxTTLSeconds {
+		return maxTTLSeconds
+	}
+	return ttlSeconds
 }
 
 // setStoredValueWithTTL keeps omitted TTL and ttl=0 on the same persistent path.

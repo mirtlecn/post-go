@@ -302,6 +302,27 @@ func TestHandleJSONCreateRejectsStringTTL(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateRejectsTTLAboveBusinessLimit(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","ttl":525601}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	if len(store.setKeys) != 0 {
+		t.Fatalf("expected no redis write, got %+v", store.setKeys)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`ttl` must be between 0 and 525600 minutes" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
 func TestHandleJSONCreateTrimsURLContentWhenTypeIsURL(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)
@@ -921,6 +942,30 @@ func TestHandleFileUploadRejectsNonNaturalTTL(t *testing.T) {
 	}
 	body := decodeErrorPayload(t, response)
 	if body.Error != "`ttl` must be a natural number" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
+func TestHandleFileUploadRejectsTTLAboveBusinessLimit(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"path": "note", "ttl": "525601"}, "note.txt", "hello")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	if len(store.setKeys) != 0 {
+		t.Fatalf("expected no redis write, got %+v", store.setKeys)
+	}
+	if fileStore.lastUploadTTL != 0 {
+		t.Fatalf("expected no upload ttl to be passed, got %d", fileStore.lastUploadTTL)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`ttl` must be between 0 and 525600 minutes" {
 		t.Fatalf("unexpected error payload: %+v", body)
 	}
 }
