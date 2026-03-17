@@ -145,7 +145,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	if typeInfo.InputType == topicType {
-		h.handleTopicCreate(w, r, rdb, pathVal, ttlProvided, allowOverwrite)
+		h.handleTopicCreate(w, r, rdb, pathVal, titleVal, ttlProvided, allowOverwrite)
 		return
 	}
 	if pathVal == "" {
@@ -193,7 +193,13 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		}
 		if resolvedPath.IsTopicItem {
 			options.TopicBackLink = "/" + resolvedPath.TopicName
-			options.TopicBackLabel = resolvedPath.TopicName
+			topicStoredValue, err := h.getTopicStoredValue(ctx, rdb, resolvedPath.TopicName)
+			if err != nil {
+				requestLogger{}.Errorf("topic get failed: %v", err)
+				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+				return
+			}
+			options.TopicBackLabel = topicDisplayTitle(resolvedPath.TopicName, topicStoredValue)
 		}
 		html, err := convert.ConvertMarkdownToHTMLWithOptions(inputContent, options)
 		if err != nil {
@@ -310,7 +316,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	utils.JSON(w, status, result)
 }
 
-func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb redisStore, topicName string, ttlProvided bool, allowOverwrite bool) {
+func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb redisStore, topicName, titleVal string, ttlProvided bool, allowOverwrite bool) {
 	topicName = storage.NormalizePath(topicName)
 	if topicName == "" {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
@@ -338,6 +344,21 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		utils.Error(w, http.StatusConflict, "conflict", "path \""+topicName+"\" already exists", "Use PUT to overwrite", nil)
 		return
 	}
+	topicTitle := resolveTopicTitle(topicName, titleVal)
+	if existing != "" {
+		existingStoredValue := storage.ParseStoredValue(existing)
+		if existingStoredValue.Type == topicType && strings.TrimSpace(titleVal) == "" {
+			topicTitle = topicDisplayTitle(topicName, existingStoredValue)
+		}
+	}
+	if err := rdb.Set(ctx, storage.LinksPrefix+topicName, storage.BuildStoredValue(storage.StoredValue{
+		Type:    topicType,
+		Content: "",
+		Title:   topicTitle,
+	}), 0).Err(); err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
 	if err := h.adoptTopicItems(ctx, rdb, topicName); err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
@@ -363,7 +384,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		SURL:    storage.GetDomain(r) + "/" + topicName,
 		Path:    topicName,
 		Type:    topicType,
-		Title:   topicName,
+		Title:   topicTitle,
 		Content: topicCountString(count),
 		TTL:     nil,
 	})
@@ -381,12 +402,11 @@ func (h *Handler) handleTopicDelete(w http.ResponseWriter, r *http.Request, rdb 
 		utils.Error(w, http.StatusNotFound, "not_found", "path \""+topicName+"\" not found", nil, nil)
 		return
 	}
-	stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName).Result()
+	storedValue, err := h.getTopicStoredValue(ctx, rdb, topicName)
 	if err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	storedValue := storage.ParseStoredValue(stored)
 	count, err := countTopicItems(ctx, rdb, topicName)
 	if err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -399,7 +419,7 @@ func (h *Handler) handleTopicDelete(w http.ResponseWriter, r *http.Request, rdb 
 	utils.JSON(w, http.StatusOK, DeleteResponse{
 		Deleted: topicName,
 		Type:    topicType,
-		Title:   storedValue.Title,
+		Title:   topicDisplayTitle(topicName, storedValue),
 		Content: topicCountString(count),
 	})
 }

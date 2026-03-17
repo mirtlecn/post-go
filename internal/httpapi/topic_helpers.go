@@ -69,6 +69,25 @@ func (h *Handler) topicExists(ctx context.Context, rdb redisStore, topicName str
 	return storage.ParseStoredValue(stored).Type == topicType, nil
 }
 
+func resolveTopicTitle(topicName, storedTitle string) string {
+	if strings.TrimSpace(storedTitle) != "" {
+		return storedTitle
+	}
+	return topicName
+}
+
+func topicDisplayTitle(topicName string, storedValue storage.StoredValue) string {
+	return resolveTopicTitle(topicName, storedValue.Title)
+}
+
+func (h *Handler) getTopicStoredValue(ctx context.Context, rdb redisStore, topicName string) (storage.StoredValue, error) {
+	stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName).Result()
+	if err != nil {
+		return storage.StoredValue{}, err
+	}
+	return storage.ParseStoredValue(stored), nil
+}
+
 func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicName, pathVal string) (resolvedTopicPath, error) {
 	pathVal = storage.NormalizePath(pathVal)
 	resolved := resolvedTopicPath{FullPath: pathVal}
@@ -135,6 +154,12 @@ func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicNam
 }
 
 func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicName string) error {
+	topicStoredValue, err := h.getTopicStoredValue(ctx, rdb, topicName)
+	if err != nil && err != redis.Nil {
+		return err
+	}
+	topicTitle := resolveTopicTitle(topicName, topicStoredValue.Title)
+
 	items, err := rdb.ZRevRangeWithScores(ctx, topicItemsKey(topicName), 0, -1).Result()
 	if err != nil {
 		return err
@@ -171,14 +196,14 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 			return err
 		}
 	}
-	html, err := topic.RenderIndexHTML(topicName, topicName, indexItems)
+	html, err := topic.RenderIndexHTML(topicName, topicTitle, indexItems)
 	if err != nil {
 		return err
 	}
 	return rdb.Set(ctx, storage.LinksPrefix+topicName, storage.BuildStoredValue(storage.StoredValue{
 		Type:    topicType,
 		Content: html,
-		Title:   topicName,
+		Title:   topicTitle,
 	}), 0).Err()
 }
 

@@ -62,13 +62,12 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		utils.Error(w, http.StatusNotFound, "not_found", "URL not found", nil, nil)
 		return
 	}
-	stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName).Result()
+	storedValue, err := h.getTopicStoredValue(ctx, rdb, topicName)
 	if err != nil {
 		requestLogger{}.Errorf("topic get failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	storedValue := storage.ParseStoredValue(stored)
 	count, err := countTopicItems(ctx, rdb, topicName)
 	if err != nil {
 		requestLogger{}.Errorf("topic count failed: %v", err)
@@ -79,7 +78,7 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		SURL:    storage.GetDomain(r) + "/" + topicName,
 		Path:    topicName,
 		Type:    topicType,
-		Title:   storedValue.Title,
+		Title:   topicDisplayTitle(topicName, storedValue),
 		Content: topicCountString(count),
 	})
 }
@@ -114,15 +113,14 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 		if topicName == "" {
 			continue
 		}
-		stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName).Result()
+		storedValue, err := h.getTopicStoredValue(ctx, rdb, topicName)
 		if err != nil {
 			requestLogger{}.Warnf("topic list get failed: %s (%v)", topicName, err)
 			continue
 		}
-		if storage.ParseStoredValue(stored).Type != topicType {
+		if storedValue.Type != topicType {
 			continue
 		}
-		storedValue := storage.ParseStoredValue(stored)
 		count, err := countTopicItems(ctx, rdb, topicName)
 		if err != nil {
 			requestLogger{}.Warnf("topic list count failed: %s (%v)", topicName, err)
@@ -132,7 +130,7 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 			SURL:    domain + "/" + topicName,
 			Path:    topicName,
 			Type:    topicType,
-			Title:   storedValue.Title,
+			Title:   topicDisplayTitle(topicName, storedValue),
 			Content: topicCountString(count),
 		})
 	}

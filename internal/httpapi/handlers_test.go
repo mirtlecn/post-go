@@ -417,6 +417,78 @@ func TestHandleJSONCreateCreatesTopicHome(t *testing.T) {
 	if stored.Type != topicType {
 		t.Fatalf("expected stored topic type, got %q", stored.Type)
 	}
+	if stored.Title != "anime" {
+		t.Fatalf("expected topic title fallback to path, got %q", stored.Title)
+	}
+}
+
+func TestHandleJSONCreateStoresTopicTitle(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"path":"anime","type":"topic","title":"Anime Archive"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Title != "Anime Archive" {
+		t.Fatalf("expected stored topic title, got %q", stored.Title)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Title != "Anime Archive" {
+		t.Fatalf("expected response topic title, got %+v", body)
+	}
+}
+
+func TestHandleJSONUpdatePreservesTopicTitleWhenTitleOmitted(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"path":"anime","type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, true)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Title != "Anime Archive" {
+		t.Fatalf("expected preserved topic title, got %q", stored.Title)
+	}
+}
+
+func TestHandleJSONUpdateOverridesTopicTitleWhenProvided(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"path":"anime","type":"topic","title":"Anime Notes"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, true)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Title != "Anime Notes" {
+		t.Fatalf("expected updated topic title, got %q", stored.Title)
+	}
 }
 
 func TestHandleJSONCreateRejectsTTLForTopic(t *testing.T) {
@@ -618,6 +690,7 @@ func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
 			{Score: 0, Member: topicPlaceholderMember},
 		},
 		getResults: map[string]fakeStringResult{
+			"surl:anime":       {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
 			"surl:anime/alive": {value: `{"type":"text","content":"hello","title":"Alive"}`},
 		},
 	}
@@ -634,6 +707,10 @@ func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
 	}
 	if store.lastSetKey != "surl:anime" {
 		t.Fatalf("expected rebuilt topic home, got %q", store.lastSetKey)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Title != "Anime Archive" {
+		t.Fatalf("expected rebuilt topic title to be preserved, got %q", stored.Title)
 	}
 }
 
@@ -673,7 +750,7 @@ func TestHandleJSONCreateConflictIncludesExistingTitle(t *testing.T) {
 func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
 		},
 		zcardResult: 4,
 	}
@@ -695,8 +772,8 @@ func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 	if body.Type != topicType || body.Content != "3" {
 		t.Fatalf("unexpected topic response: %+v", body)
 	}
-	if body.Title != "anime" {
-		t.Fatalf("expected topic title anime, got %+v", body)
+	if body.Title != "Anime Archive" {
+		t.Fatalf("expected topic title Anime Archive, got %+v", body)
 	}
 }
 
@@ -704,8 +781,8 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	store := &fakeRedisStore{
 		scanKeys: []string{"topic:anime:items", "topic:blog:items"},
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
-			"surl:blog":  {value: `{"type":"topic","content":"<html></html>","title":"blog"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+			"surl:blog":  {value: `{"type":"topic","content":"<html></html>"}`},
 		},
 		zcardResult: 1,
 	}
@@ -730,8 +807,34 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	if body[0].Type != topicType || body[1].Type != topicType {
 		t.Fatalf("unexpected topic list response: %+v", body)
 	}
-	if body[0].Title == "" || body[1].Title == "" {
+	if body[0].Title != "Anime Archive" || body[1].Title != "blog" {
 		t.Fatalf("expected topic titles, got %+v", body)
+	}
+}
+
+func TestHandleJSONCreateUsesStoredTopicTitleForMarkdownBacklink(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+		},
+		zrangeResult: []redis.Z{{Score: float64(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix()), Member: "castle"}},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"topic":"anime","path":"castle","url":"# Castle","type":"md2html","title":"Castle Notes"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.setValues[0])
+	if !strings.Contains(stored.Content, "<div style=\"font-size: 1.25em; font-weight: bold\">Anime Archive</div>") {
+		t.Fatalf("expected markdown header to use stored topic title, got %q", stored.Content)
+	}
+	if !strings.Contains(stored.Content, `href="/anime"`) {
+		t.Fatalf("expected markdown backlink href to use topic path, got %q", stored.Content)
 	}
 }
 

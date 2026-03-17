@@ -17,11 +17,11 @@ echo "Using Redis DB=$REDIS_DB"
 
 redis_flush
 
-api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","convert":"topic"}'
+api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","convert":"topic","title":"Anime Archive"}'
 assert_status 201 "create topic via alias"
 assert_jq '.type == "topic"' "create topic type"
 assert_jq '.content == "0"' "create topic count"
-assert_jq '.title == "'"$TOPIC"'"' "create topic title"
+assert_jq '.title == "Anime Archive"' "create topic title"
 pass "create topic via alias"
 
 TOPIC_RAW="$(redis_get "surl:$TOPIC")"
@@ -36,19 +36,19 @@ pass "topic items key exists"
 api_json GET "$POST_BASE_URL/" '{"type":"topic"}'
 assert_status 200 "topic list"
 assert_jq 'map(.path) | index("'"$TOPIC"'") != null' "topic list contains created topic"
-assert_jq 'map(select(.path == "'"$TOPIC"'"))[0].title == "'"$TOPIC"'"' "topic list title"
+assert_jq 'map(select(.path == "'"$TOPIC"'"))[0].title == "Anime Archive"' "topic list title"
 pass "topic list"
 
 api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","convert":"topic"}'
 assert_status 200 "topic lookup"
 assert_jq '.type == "topic"' "topic lookup type"
 assert_jq '.content == "0"' "topic lookup count"
-assert_jq '.title == "'"$TOPIC"'"' "topic lookup title"
+assert_jq '.title == "Anime Archive"' "topic lookup title"
 pass "topic lookup"
 
 TOPIC_HOME="$(curl -sS "$POST_BASE_URL/$TOPIC")"
-assert_contains "$TOPIC_HOME" "<title>$TOPIC</title>" "topic home title"
-assert_contains "$TOPIC_HOME" "<h1 id=\"$TOPIC\">$TOPIC</h1>" "topic home heading"
+assert_contains "$TOPIC_HOME" "<title>Anime Archive</title>" "topic home title"
+assert_contains "$TOPIC_HOME" "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>" "topic home heading"
 pass "topic home render"
 
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic","ttl":10}'
@@ -78,8 +78,9 @@ pass "create topic item via topic"
 
 ITEM_HTML="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes")"
 assert_contains "$ITEM_HTML" "<title>Castle Notes</title>" "topic item title"
-assert_contains "$ITEM_HTML" "◂" "topic item backlink prefix"
-assert_contains "$ITEM_HTML" "Back to &lt;$TOPIC&gt;" "topic item backlink"
+assert_contains "$ITEM_HTML" "<div style=\"font-size: 1.25em; font-weight: bold\">Anime Archive</div>" "topic item header"
+assert_contains "$ITEM_HTML" "href=\"/$TOPIC\"" "topic item backlink href"
+assert_contains "$ITEM_HTML" "<strong>Home</strong>" "topic item home link label"
 pass "topic item render"
 
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/screening-signup","url":"https://example.com/screening","type":"url"}'
@@ -112,7 +113,19 @@ assert_status 200 "topic lookup after items"
 assert_jq '.content == "3"' "topic count after items"
 pass "topic count after items"
 
+api_json PUT "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic","title":"Anime Notes"}'
+assert_status 200 "update topic title"
+assert_jq '.title == "Anime Notes"' "update topic title body"
+pass "update topic title"
+
+api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
+assert_status 200 "topic lookup after title update"
+assert_jq '.title == "Anime Notes"' "topic lookup after title update body"
+pass "topic lookup after title update"
+
 TOPIC_HOME="$(curl -sS "$POST_BASE_URL/$TOPIC")"
+assert_contains "$TOPIC_HOME" "<title>Anime Notes</title>" "topic home updated title"
+assert_contains "$TOPIC_HOME" "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Notes</div>" "topic home updated heading"
 assert_contains "$TOPIC_HOME" "Castle Notes" "topic home first item"
 assert_contains "$TOPIC_HOME" "screening-signup" "topic home fallback title"
 assert_contains "$TOPIC_HOME" "↗" "topic home url mark"
@@ -137,7 +150,7 @@ pass "topic count after delete"
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
 assert_status 200 "delete topic"
 assert_jq '.content == "2"' "delete topic content count"
-assert_jq '.title == "'"$TOPIC"'"' "delete topic title"
+assert_jq '.title == "Anime Notes"' "delete topic title"
 pass "delete topic"
 
 ORPHAN="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes")"
@@ -167,9 +180,9 @@ assert_jq '.content == "1"' "lookup refreshed topic count body"
 pass "lookup refreshed topic count"
 
 NESTED_TOPIC="$TOPIC/2026"
-api_json POST "$POST_BASE_URL/" '{"path":"'"$NESTED_TOPIC"'","type":"topic"}'
+api_json POST "$POST_BASE_URL/" '{"path":"'"$NESTED_TOPIC"'","type":"topic","title":"Anime Archive 2026"}'
 assert_status 201 "create nested topic"
-assert_jq '.title == "'"$NESTED_TOPIC"'"' "create nested topic title"
+assert_jq '.title == "Anime Archive 2026"' "create nested topic title"
 pass "create nested topic"
 
 api_json POST "$POST_BASE_URL/" '{"path":"'"$NESTED_TOPIC"'/post-1","url":"nested body","type":"text"}'

@@ -170,6 +170,7 @@ Additional field:
 - `525600` minutes equals `365` days
 - invalid TTL returns `400 invalid_request`
 - topic itself does not support TTL
+- topic display title uses stored `title` first, and falls back to topic `path` when empty
 
 ### Topic path resolution
 
@@ -273,6 +274,7 @@ Type behavior:
   - converts input to terminal QR text
 - `topic`
   - creates a topic resource
+  - supports optional `title`
 
 ### Multipart upload
 
@@ -299,7 +301,8 @@ Rules:
 ```json
 {
   "path": "anime",
-  "type": "topic"
+  "type": "topic",
+  "title": "Anime Archive"
 }
 ```
 
@@ -307,6 +310,7 @@ Rules:
 
 - topic must be explicitly created
 - `path` is the topic name
+- `title` is optional and controls topic display title
 - topic home is stored at `surl:<topic>`
 - topic member set is stored at `topic:<topic>:items`
 - empty topic is valid
@@ -318,7 +322,7 @@ Create response:
   "surl": "http://host/anime",
   "path": "anime",
   "type": "topic",
-  "title": "anime",
+  "title": "Anime Archive",
   "content": "0",
   "ttl": null
 }
@@ -340,13 +344,16 @@ Update an existing item, or rebuild a topic.
 ```json
 {
   "path": "anime",
-  "type": "topic"
+  "type": "topic",
+  "title": "Anime Archive"
 }
 ```
 
 Rules:
 
 - rebuilds `surl:<topic>` from `topic:<topic>:items`
+- when `title` is provided for `type=topic`, updates the stored topic title
+- when `title` is omitted for `type=topic`, keeps the existing stored title
 - removes stale topic members whose `surl:<topic>/<path>` content no longer exists
 - does not change child items
 
