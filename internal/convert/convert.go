@@ -8,6 +8,8 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	callouts "github.com/ZMT-Creative/gm-alert-callouts"
 	katex "github.com/libkush/goldmark-katex"
@@ -124,7 +126,21 @@ func buildMarkdownInput(markdown string, options MarkdownOptions) string {
 	if backLabel == "" {
 		backLabel = "Topic"
 	}
-	return "◂ [Back to \\<" + escapeMarkdownLinkText(backLabel) + "\\>](" + options.TopicBackLink + ")\n\n" + markdown
+	var builder strings.Builder
+	builder.WriteString("<div style=\"font-size: 1.25em; font-weight: bold\">")
+	builder.WriteString(html.EscapeString(CapitalizeTopicLabel(backLabel)))
+	builder.WriteString("</div>\n\n")
+	builder.WriteString("[**Home**](")
+	builder.WriteString(formatMarkdownLinkDestination(options.TopicBackLink))
+	builder.WriteString(")")
+	if options.PageTitle != "" {
+		builder.WriteString(" / <span style=\"color: #666;\">")
+		builder.WriteString(html.EscapeString(options.PageTitle))
+		builder.WriteString("</span>")
+	}
+	builder.WriteString("\n\n\n\n\n\n")
+	builder.WriteString(markdown)
+	return builder.String()
 }
 
 func escapeMarkdownLinkText(text string) string {
@@ -136,6 +152,22 @@ func escapeMarkdownLinkText(text string) string {
 		"]", "\\]",
 	)
 	return replacer.Replace(text)
+}
+
+func formatMarkdownLinkDestination(destination string) string {
+	return "<" + destination + ">"
+}
+
+// CapitalizeTopicLabel uppercases the first rune of a topic label.
+func CapitalizeTopicLabel(label string) string {
+	if label == "" {
+		return ""
+	}
+	firstRune, size := utf8.DecodeRuneInString(label)
+	if firstRune == utf8.RuneError && size == 0 {
+		return ""
+	}
+	return string(unicode.ToUpper(firstRune)) + label[size:]
 }
 
 func wrapHTML(body, alertsStyle, pageTitle string) string {

@@ -40,21 +40,23 @@ func mustContain(label string, haystack string, needle string) {
 
 func main() {
 	html, err := convert.ConvertMarkdownToHTMLWithOptions("# Hello", convert.MarkdownOptions{
-		PageTitle:      "Anime Archive",
+		PageTitle:      "Howl Visual Draft",
 		TopicBackLink:  "/anime",
-		TopicBackLabel: "Anime",
+		TopicBackLabel: "anime",
 	})
 	if err != nil {
 		fail("convert html", err.Error())
 	}
-	mustContain("page title", html, "<title>Anime Archive</title>")
+	mustContain("page title", html, "<title>Howl Visual Draft</title>")
 	pass("page title")
 	mustContain("topic backlink href", html, `href="/anime"`)
 	pass("topic backlink href")
-	mustContain("topic backlink prefix", html, "◂")
-	pass("topic backlink prefix")
-	mustContain("topic backlink label", html, "Back to &lt;Anime&gt;")
-	pass("topic backlink label")
+	mustContain("topic heading", html, "<div style=\"font-size: 1.25em; font-weight: bold\">Anime</div>")
+	pass("topic heading")
+	mustContain("topic home label", html, "<strong>Home</strong>")
+	pass("topic home label")
+	mustContain("topic page title suffix", html, "<span style=\"color: #666;\">Howl Visual Draft</span>")
+	pass("topic page title suffix")
 
 	markdown := topic.BuildIndexMarkdown("anime", "Anime", []topic.Item{
 		{
@@ -81,6 +83,10 @@ func main() {
 			UpdatedAt: time.Date(2025, time.October, 18, 10, 0, 0, 0, time.UTC),
 		},
 	})
+	mustContain("index heading", markdown, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime</div>")
+	pass("index heading")
+	mustContain("index home label", markdown, "<span style=\"color: #666;\">Home</span>")
+	pass("index home label")
 	mustContain("flat markdown item", markdown, "[Howl Visual Draft](</anime/howl-visual>) 2026-12-23")
 	pass("flat markdown item")
 	mustContain("text type mark", markdown, "[Castle in the Sky Notes](</anime/castle-notes>) ☰ 2026-12-21")

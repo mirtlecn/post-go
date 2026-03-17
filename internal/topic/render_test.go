@@ -31,7 +31,14 @@ func TestBuildIndexMarkdownSortsByUpdatedAtAsFlatList(t *testing.T) {
 	output := BuildIndexMarkdown("anime", "Anime", items)
 
 	expected := strings.Join([]string{
-		"# Anime",
+		"<div style=\"font-size: 1.3em; font-weight: bold\">Anime</div>",
+		"",
+		"<span style=\"color: #666;\">Home</span>",
+		"",
+		"",
+		"",
+		"",
+		"",
 		"",
 		"- [Howl Visual Draft](</anime/howl-visual>) 2026-12-23",
 		"- [Castle in the Sky Notes](</anime/castle-notes>) ☰ 2026-12-21",
@@ -58,6 +65,17 @@ func TestBuildIndexMarkdownUsesFullPathFallbackForEmptyTitle(t *testing.T) {
 
 	if !strings.Contains(output, "[notes/howl-visual](</anime/notes/howl-visual>) ↗ 2026-12-23") {
 		t.Fatalf("expected fallback title from full path, got %q", output)
+	}
+}
+
+func TestBuildIndexMarkdownCapitalizesTopicLabelInHeader(t *testing.T) {
+	output := BuildIndexMarkdown("anime", "anime", nil)
+
+	if !strings.Contains(output, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime</div>") {
+		t.Fatalf("expected capitalized topic label in header, got %q", output)
+	}
+	if !strings.Contains(output, "<span style=\"color: #666;\">Home</span>") {
+		t.Fatalf("expected home label in header, got %q", output)
 	}
 }
 

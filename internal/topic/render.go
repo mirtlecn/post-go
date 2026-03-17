@@ -1,6 +1,7 @@
 package topic
 
 import (
+	"html"
 	"path"
 	"sort"
 	"strings"
@@ -21,9 +22,11 @@ type Item struct {
 // BuildIndexMarkdown renders the topic index as a flat Markdown list.
 func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 	var builder strings.Builder
-	builder.WriteString("# ")
-	builder.WriteString(topicTitle)
-	builder.WriteString("\n")
+	builder.WriteString("<div style=\"font-size: 1.3em; font-weight: bold\">")
+	builder.WriteString(html.EscapeString(convert.CapitalizeTopicLabel(topicTitle)))
+	builder.WriteString("</div>\n\n")
+	builder.WriteString("<span style=\"color: #666;\">Home</span>")
+	builder.WriteString("\n\n\n\n\n\n")
 
 	if len(items) == 0 {
 		return builder.String()
