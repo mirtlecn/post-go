@@ -4,7 +4,7 @@
     "route_path": "/asset/md-base-7f7c1c5a.css",
     "file_name": "md-base-7f7c1c5a.css",
     "content_type": "text/css; charset=utf-8",
-    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/refs/heads/main/ravel-gfm.css"
+    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/300f387f884bbff6ba044959359692786b6acafa/ravel-gfm.css"
   },
   {
     "key": "highlight_light_css",
@@ -32,13 +32,13 @@
     "route_path": "/asset/gfm-addon-css-f2d9455b.css",
     "file_name": "gfm-addon-css-f2d9455b.css",
     "content_type": "text/css; charset=utf-8",
-    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/refs/heads/main/gfm-addon.css"
+    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/300f387f884bbff6ba044959359692786b6acafa/gfm-addon.css"
   },
   {
     "key": "gfm_addon_js",
     "route_path": "/asset/gfm-addon-js-5fcb18f0.js",
     "file_name": "gfm-addon-js-5fcb18f0.js",
     "content_type": "application/javascript; charset=utf-8",
-    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/refs/heads/main/gfm-addon.js"
+    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/300f387f884bbff6ba044959359692786b6acafa/gfm-addon.js"
   }
 ]
