@@ -104,6 +104,11 @@ Rules:
 
 - all successful JSON responses always include `title`
 - if stored title is missing, API returns `""`
+- `content` uses preview mode by default:
+  - `text` and `html` return the first `15` characters, then `...` when truncated
+  - `url` and `file` return the full stored value
+  - `topic` returns the current member count as a string
+- setting header `x-export: true` returns full stored content for non-topic items
 
 ### Create / update response
 
@@ -122,6 +127,7 @@ Rules:
 Additional field:
 
 - `overwritten: string` optional
+- `warning: string` optional
 
 ### Delete response
 
@@ -163,6 +169,7 @@ Additional field:
   - `a-z A-Z 0-9 - _ . / ( )`
 - max path length:
   - `99`
+- paths under reserved built-in asset names such as `asset/...` are rejected for create, update, and delete
 
 ### TTL rules
 
@@ -299,6 +306,7 @@ Rules:
 - file uploads require configured S3-compatible storage
 - if `path` has no extension, uploaded file extension is appended
 - topic path resolution follows the same rules as JSON create
+- `PUT` multipart upload requires `path`
 
 ### Topic creation
 
@@ -315,6 +323,7 @@ Rules:
 - topic must be explicitly created
 - `path` is the topic name
 - `title` is optional and controls topic display title
+- when `title` is omitted or blank, the stored topic title falls back to `path`
 - topic home is stored at `surl:<topic>`
 - topic member set is stored at `topic:<topic>:items`
 - empty topic is valid
@@ -334,13 +343,13 @@ Create response:
 
 ## `PUT /`
 
-Update an existing item, or rebuild a topic.
+Upsert an item, or rebuild/create a topic.
 
 ### Regular update
 
 - same body shape as `POST /`
-- overwrites existing item at `path`
-- returns `200 OK`
+- if `path` already exists, overwrites the existing item and returns `200 OK`
+- if `path` does not exist, creates a new item and returns `201 Created`
 - `overwritten` contains previous preview or exported content
 
 ### Topic rebuild
@@ -360,6 +369,7 @@ Rules:
 - when `title` is omitted for `type=topic`, keeps the existing stored title
 - removes stale topic members whose `surl:<topic>/<path>` content no longer exists
 - does not change child items
+- if the topic does not exist yet, the same request creates it and returns `200 OK`
 
 ## `DELETE /`
 
@@ -503,6 +513,13 @@ Behavior by stored type:
 - `topic`
   - topic home HTML
 
+Reserved built-in asset route:
+
+- `/asset/...` is not a normal public item path
+- direct cross-site access returns `403 forbidden`
+- `GET` and `HEAD` are allowed only for same-origin requests identified by `Referer`, `Origin`, or `Sec-Fetch-Site`
+- other methods return `405 Method Not Allowed`
+
 Cache headers:
 
 - public `text`, `html`, `topic`, `url`, `file` responses set:
@@ -515,10 +532,12 @@ Cache headers:
 
 Topic home is generated from `topic:<topic>:items`.
 
-Markdown shape:
+Source Markdown shape:
 
 ```md
-# <topic>
+<div style="font-size: 1.3em; font-weight: bold"><Topic Title></div>
+
+<span style="color: #666;">Home</span>
 
 - [<title>](/<topic>/<path>) <mark> YYYY-MM-DD
 ```
@@ -534,6 +553,7 @@ Title rules:
 
 - use stored `title` when present
 - otherwise use path without topic prefix
+- topic page heading capitalizes the first rune of the display title
 
 Markdown conversion rules:
 
@@ -541,7 +561,8 @@ Markdown conversion rules:
 - generated HTML `<title>` uses stored `title`
 - generated HTML references built-in `/asset/...` resources except for the KaTeX stylesheet used by display math
 - topic Markdown content also gets a top backlink:
-  - `◂ [Back to \<\<topic\>\>](/<topic>)`
+  - `[**Home**](/<topic>)`
+  - when the item itself has a title, the header also appends ` / <title>`
 
 ---
 
