@@ -27,6 +27,7 @@ make             # remove old ./post-server and rebuild
 make test        # run go test ./...
 make smoke       # run ./scripts/smoke_all.sh
 make run         # best-effort asset refresh, then go run ./cmd/post-server
+./scripts/bump_version.sh 1.3.5 # update Go version, create commit, and create git tag
 ```
 
 CI:
