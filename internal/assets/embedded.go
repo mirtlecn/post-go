@@ -24,15 +24,21 @@ var embeddedAssetFS embed.FS
 var (
 	md2HTMLAssetsByKey   map[string]md2HTMLAsset
 	md2HTMLAssetsByRoute map[string]md2HTMLAsset
+	initErr              error
 )
 
 func init() {
 	assetsByKey, assetsByRoute, err := loadMD2HTMLAssets()
 	if err != nil {
-		panic(err)
+		initErr = err
+		return
 	}
 	md2HTMLAssetsByKey = assetsByKey
 	md2HTMLAssetsByRoute = assetsByRoute
+}
+
+func InitError() error {
+	return initErr
 }
 
 func loadMD2HTMLAssets() (map[string]md2HTMLAsset, map[string]md2HTMLAsset, error) {
@@ -65,6 +71,9 @@ func loadMD2HTMLAssets() (map[string]md2HTMLAsset, map[string]md2HTMLAsset, erro
 }
 
 func MustAssetURL(key string) string {
+	if initErr != nil {
+		panic(fmt.Sprintf("embedded assets are not ready: %v; run `go run ./scripts/update_embedded_assets.go`", initErr))
+	}
 	asset, ok := md2HTMLAssetsByKey[key]
 	if !ok {
 		panic(fmt.Sprintf("embedded asset key not found: %s", key))
@@ -73,6 +82,9 @@ func MustAssetURL(key string) string {
 }
 
 func LookupEmbeddedAsset(routePath string) ([]byte, string, bool) {
+	if initErr != nil {
+		return nil, "", false
+	}
 	asset, ok := md2HTMLAssetsByRoute[routePath]
 	if !ok {
 		return nil, "", false
@@ -81,6 +93,9 @@ func LookupEmbeddedAsset(routePath string) ([]byte, string, bool) {
 }
 
 func IsReservedEmbeddedAssetPath(routePath string) bool {
+	if initErr != nil {
+		return false
+	}
 	_, ok := md2HTMLAssetsByRoute[routePath]
 	return ok
 }

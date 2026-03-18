@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"post-go/internal/assets"
 	"post-go/internal/buildinfo"
 	"post-go/internal/httpapi"
 )
@@ -18,6 +19,12 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
+	}
+	if err := assets.InitError(); err != nil {
+		fmt.Println("Error: Embedded asset files are missing or incomplete.")
+		fmt.Println("Run: go run ./scripts/update_embedded_assets.go")
+		fmt.Printf("Details: %v\n", err)
+		os.Exit(1)
 	}
 
 	h := httpapi.NewHandler()
