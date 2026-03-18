@@ -35,6 +35,7 @@ type fakeRedisStore struct {
 	ttlErr       error
 	mgetResults  []any
 	mgetErr      error
+	mgetCalls    [][]string
 	zaddErr      error
 	zremErr      error
 	zremKeys     []string
@@ -130,7 +131,23 @@ func (f *fakeRedisStore) TTL(ctx context.Context, key string) *redis.DurationCmd
 }
 
 func (f *fakeRedisStore) MGet(ctx context.Context, keys ...string) *redis.SliceCmd {
-	return redis.NewSliceResult(f.mgetResults, f.mgetErr)
+	f.mgetCalls = append(f.mgetCalls, append([]string(nil), keys...))
+	if f.mgetResults != nil || f.mgetErr != nil {
+		return redis.NewSliceResult(f.mgetResults, f.mgetErr)
+	}
+	results := make([]any, len(keys))
+	for index, key := range keys {
+		result, ok := f.getResults[key]
+		if !ok || result.err == redis.Nil {
+			results[index] = nil
+			continue
+		}
+		if result.err != nil {
+			return redis.NewSliceResult(nil, result.err)
+		}
+		results[index] = result.value
+	}
+	return redis.NewSliceResult(results, nil)
 }
 
 func (f *fakeRedisStore) TxPipeline() redis.Pipeliner {
@@ -699,6 +716,13 @@ func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
 	if err := handler.rebuildTopicIndex(context.Background(), store, "anime"); err != nil {
 		t.Fatalf("expected rebuild to succeed, got %v", err)
 	}
+	if len(store.mgetCalls) != 1 {
+		t.Fatalf("expected one mget call, got %+v", store.mgetCalls)
+	}
+	expectedMGetKeys := []string{"surl:anime/alive", "surl:anime/gone"}
+	if strings.Join(store.mgetCalls[0], ",") != strings.Join(expectedMGetKeys, ",") {
+		t.Fatalf("expected topic rebuild mget keys %v, got %v", expectedMGetKeys, store.mgetCalls[0])
+	}
 	if len(store.zremKeys) != 1 || store.zremKeys[0] != "topic:anime:items" {
 		t.Fatalf("expected stale zrem on topic items, got keys=%+v members=%+v", store.zremKeys, store.zremMembers)
 	}
@@ -804,11 +828,59 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	if len(body) != 2 {
 		t.Fatalf("expected 2 topics, got %+v", body)
 	}
+	if len(store.mgetCalls) != 1 {
+		t.Fatalf("expected one mget call, got %+v", store.mgetCalls)
+	}
+	expectedMGetKeys := []string{"surl:anime", "surl:blog"}
+	if strings.Join(store.mgetCalls[0], ",") != strings.Join(expectedMGetKeys, ",") {
+		t.Fatalf("expected topic list mget keys %v, got %v", expectedMGetKeys, store.mgetCalls[0])
+	}
 	if body[0].Type != topicType || body[1].Type != topicType {
 		t.Fatalf("unexpected topic list response: %+v", body)
 	}
 	if body[0].Title != "Anime Archive" || body[1].Title != "blog" {
 		t.Fatalf("expected topic titles, got %+v", body)
+	}
+}
+
+func TestHandleListUsesMGetForStoredValues(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note", "surl:anime"},
+		getResults: map[string]fakeStringResult{
+			"surl:note":  {value: `{"type":"text","content":"hello","title":"Greeting"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+		},
+		ttlResult:   0,
+		zcardResult: 3,
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+
+	handler.handleList(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if len(store.mgetCalls) != 1 {
+		t.Fatalf("expected one mget call, got %+v", store.mgetCalls)
+	}
+	expectedMGetKeys := []string{"surl:note", "surl:anime"}
+	if strings.Join(store.mgetCalls[0], ",") != strings.Join(expectedMGetKeys, ",") {
+		t.Fatalf("expected list mget keys %v, got %v", expectedMGetKeys, store.mgetCalls[0])
+	}
+	var body []ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body) != 2 {
+		t.Fatalf("expected 2 items, got %+v", body)
+	}
+	if body[0].Path != "note" || body[0].Content != "hello" {
+		t.Fatalf("unexpected first item: %+v", body[0])
+	}
+	if body[1].Path != "anime" || body[1].Type != topicType || body[1].Content != "2" {
+		t.Fatalf("unexpected topic item: %+v", body[1])
 	}
 }
 

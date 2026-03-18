@@ -88,6 +88,28 @@ func (h *Handler) getTopicStoredValue(ctx context.Context, rdb redisStore, topic
 	return storage.ParseStoredValue(stored), nil
 }
 
+func batchGetStoredValues(ctx context.Context, rdb redisStore, keys []string) (map[string]storage.StoredValue, error) {
+	if len(keys) == 0 {
+		return map[string]storage.StoredValue{}, nil
+	}
+	values, err := rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+	storedValues := make(map[string]storage.StoredValue, len(keys))
+	for index, key := range keys {
+		if index >= len(values) || values[index] == nil {
+			continue
+		}
+		stored, ok := values[index].(string)
+		if !ok {
+			continue
+		}
+		storedValues[key] = storage.ParseStoredValue(stored)
+	}
+	return storedValues, nil
+}
+
 func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicName, pathVal string) (resolvedTopicPath, error) {
 	pathVal = storage.NormalizePath(pathVal)
 	resolved := resolvedTopicPath{FullPath: pathVal}
@@ -166,6 +188,7 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 	}
 	indexItems := make([]topic.Item, 0, len(items))
 	staleMembers := make([]any, 0)
+	memberKeys := make([]string, 0, len(items))
 	for _, item := range items {
 		member, ok := item.Member.(string)
 		if !ok || member == "" {
@@ -174,15 +197,23 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 		if member == topicPlaceholderMember {
 			continue
 		}
-		stored, err := rdb.Get(ctx, storage.LinksPrefix+topicName+"/"+member).Result()
-		if err == redis.Nil {
+		memberKey := storage.LinksPrefix + topicName + "/" + member
+		memberKeys = append(memberKeys, memberKey)
+	}
+	storedValues, err := batchGetStoredValues(ctx, rdb, memberKeys)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		member, ok := item.Member.(string)
+		if !ok || member == "" || member == topicPlaceholderMember {
+			continue
+		}
+		storedValue, exists := storedValues[storage.LinksPrefix+topicName+"/"+member]
+		if !exists {
 			staleMembers = append(staleMembers, member)
 			continue
 		}
-		if err != nil {
-			return err
-		}
-		storedValue := storage.ParseStoredValue(stored)
 		indexItems = append(indexItems, topic.Item{
 			Path:      member,
 			FullPath:  topicName + "/" + member,

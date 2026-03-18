@@ -108,14 +108,25 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 	sort.Strings(keys)
 	topics := make([]ItemResponse, 0, len(keys))
 	domain := storage.GetDomain(r)
+	topicKeys := make([]string, 0, len(keys))
+	topicNames := make([]string, 0, len(keys))
 	for _, key := range keys {
 		topicName := topicNameFromItemsKey(key)
 		if topicName == "" {
 			continue
 		}
-		storedValue, err := h.getTopicStoredValue(ctx, rdb, topicName)
-		if err != nil {
-			requestLogger{}.Warnf("topic list get failed: %s (%v)", topicName, err)
+		topicNames = append(topicNames, topicName)
+		topicKeys = append(topicKeys, storage.LinksPrefix+topicName)
+	}
+	storedValues, err := batchGetStoredValues(ctx, rdb, topicKeys)
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	for _, topicName := range topicNames {
+		storedValue, exists := storedValues[storage.LinksPrefix+topicName]
+		if !exists {
+			requestLogger{}.Warnf("topic list get missed: %s", topicName)
 			continue
 		}
 		if storedValue.Type != topicType {
@@ -222,12 +233,17 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	storedValues, err := batchGetStoredValues(ctx, rdb, keys)
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
 	links := make([]ItemResponse, 0, len(keys))
 	for _, key := range keys {
 		path := strings.TrimPrefix(key, storage.LinksPrefix)
-		stored, err := rdb.Get(ctx, key).Result()
-		if err != nil {
-			requestLogger{}.Warnf("list get failed: %s (%v)", key, err)
+		storedValue, exists := storedValues[key]
+		if !exists {
+			requestLogger{}.Warnf("list get missed: %s", key)
 			continue
 		}
 		ttlSeconds, err := rdb.TTL(ctx, key).Result()
@@ -235,7 +251,6 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			requestLogger{}.Warnf("list ttl failed: %s (%v)", key, err)
 			continue
 		}
-		storedValue := storage.ParseStoredValue(stored)
 		content := responseContent(storedValue.Type, storedValue.Content, isExport)
 		ttl := ttlMinutesFromDuration(ttlSeconds)
 		if storedValue.Type == topicType {
