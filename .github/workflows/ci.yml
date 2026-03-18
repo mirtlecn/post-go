@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - "**"
+    tags-ignore:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
@@ -23,6 +25,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Sync embedded assets
+        run: make assets-sync
+
       - name: Run tests
         run: go test ./...
 
@@ -39,6 +44,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Sync embedded assets
+        run: make assets-sync
 
       - name: Run GoReleaser snapshot build
         uses: goreleaser/goreleaser-action@v7
