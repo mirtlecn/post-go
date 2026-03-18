@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const (
@@ -19,7 +20,10 @@ type StoredValue struct {
 	Type    string `json:"type"`
 	Content string `json:"content"`
 	Title   string `json:"title,omitempty"`
+	Created string `json:"created,omitempty"`
 }
+
+var defaultCreatedLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 // BuildStoredValue marshals a stored value to JSON.
 func BuildStoredValue(value StoredValue) string {
@@ -151,4 +155,44 @@ func ValidatePath(path string) error {
 		}
 	}
 	return nil
+}
+
+// ParseCreatedTime parses accepted created input formats.
+func ParseCreatedTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, errors.New("empty created")
+	}
+	layoutsWithTimezone := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+	for _, layout := range layoutsWithTimezone {
+		parsed, err := time.Parse(layout, raw)
+		if err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+	layoutsWithoutTimezone := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+		"2006.01.02",
+		"2006/01/02",
+	}
+	for _, layout := range layoutsWithoutTimezone {
+		parsed, err := time.ParseInLocation(layout, raw, defaultCreatedLocation)
+		if err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+	return time.Time{}, errors.New("invalid created format")
+}
+
+// NormalizeCreatedTime converts supported created input into UTC RFC3339.
+func NormalizeCreatedTime(raw string) (string, error) {
+	parsed, err := ParseCreatedTime(raw)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Format(time.RFC3339), nil
 }

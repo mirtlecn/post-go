@@ -214,12 +214,16 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 			staleMembers = append(staleMembers, member)
 			continue
 		}
+		updatedAt := time.Unix(int64(item.Score), 0)
+		if createdAt, ok := parseStoredCreatedTime(storedValue.Created); ok {
+			updatedAt = createdAt
+		}
 		indexItems = append(indexItems, topic.Item{
 			Path:      member,
 			FullPath:  topicName + "/" + member,
 			Type:      storedValue.Type,
 			Title:     storedValue.Title,
-			UpdatedAt: time.Unix(int64(item.Score), 0),
+			UpdatedAt: updatedAt,
 		})
 	}
 	if len(staleMembers) > 0 {
@@ -235,6 +239,7 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 		Type:    topicType,
 		Content: html,
 		Title:   topicTitle,
+		Created: topicStoredValue.Created,
 	}), 0).Err()
 }
 

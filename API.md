@@ -34,7 +34,8 @@ All `surl:<path>` values are stored as JSON:
 {
   "type": "text",
   "content": "hello",
-  "title": "Greeting"
+  "title": "Greeting",
+  "created": "2022-10-11T01:11:01Z"
 }
 ```
 
@@ -43,6 +44,7 @@ Current fields:
 - `type: string` required
 - `content: string` required
 - `title: string` optional
+- `created: string` optional
 
 Stored `type` values:
 
@@ -66,6 +68,7 @@ Normalization rules:
 - if neither is provided:
   - URL-like input becomes `url`
   - other input becomes `text`
+- stored `created` is normalized to UTC `RFC3339`
 
 ---
 
@@ -86,6 +89,7 @@ Used by:
   "path": "path",
   "type": "text",
   "title": "Greeting",
+  "created": "2022-10-11T01:11:01Z",
   "ttl": 10,
   "content": "hello"
 }
@@ -97,6 +101,7 @@ Fields:
 - `path: string`
 - `type: string`
 - `title: string`
+- `created: string`
 - `ttl: number | null`
 - `content: string`
 
@@ -104,6 +109,8 @@ Rules:
 
 - all successful JSON responses always include `title`
 - if stored title is missing, API returns `""`
+- all successful JSON responses always include `created`
+- if stored `created` is missing or invalid, API returns `"illegal"`
 - `content` uses preview mode by default:
   - `text` and `html` return the first `15` characters, then `...` when truncated
   - `url` and `file` return the full stored value
@@ -118,6 +125,7 @@ Rules:
   "path": "path",
   "type": "text",
   "title": "Greeting",
+  "created": "2022-10-11T01:11:01Z",
   "content": "hello",
   "ttl": 10,
   "overwritten": "old value"
@@ -136,6 +144,7 @@ Additional field:
   "deleted": "path",
   "type": "text",
   "title": "Greeting",
+  "created": "2022-10-11T01:11:01Z",
   "content": "hello"
 }
 ```
@@ -180,6 +189,23 @@ Additional field:
 - invalid TTL returns `400 invalid_request`
 - topic itself does not support TTL
 - topic display title uses stored `title` first, and falls back to topic `path` when empty
+
+### Created rules
+
+- `created` is optional in write requests
+- accepted input formats:
+  - `RFC3339`
+  - `RFC3339Nano`
+  - `2006-01-02 15:04:05`
+  - `2006-01-02`
+  - `2006.01.02`
+  - `2006/01/02`
+- inputs without timezone are parsed in `Asia/Shanghai`
+- date-only inputs use time `00:00:00`
+- stored value is normalized to UTC `RFC3339`
+- `POST` without `created` uses request receive time
+- `PUT` without `created` keeps the existing stored value
+- invalid input returns `400 invalid_request`
 
 ### Topic path resolution
 
@@ -252,6 +278,7 @@ Create a regular item, topic, or file upload.
   "url": "hello",
   "path": "note",
   "title": "Greeting",
+  "created": "2022-10-11",
   "type": "text",
   "ttl": 10,
   "topic": "anime"
@@ -263,6 +290,7 @@ Supported fields:
 - `url: string` required
 - `path: string` optional
 - `title: string` optional
+- `created: string` optional
 - `type: string` optional
 - `convert: string` optional alias of `type`
 - `ttl: number` optional
@@ -298,6 +326,7 @@ Supported fields:
 - `file` required
 - `path` optional
 - `title` optional
+- `created` optional
 - `ttl` optional
 - `topic` optional
 
@@ -336,6 +365,7 @@ Create response:
   "path": "anime",
   "type": "topic",
   "title": "Anime Archive",
+  "created": "2022-10-11T01:11:01Z",
   "content": "0",
   "ttl": null
 }
@@ -351,6 +381,7 @@ Upsert an item, or rebuild/create a topic.
 - if `path` already exists, overwrites the existing item and returns `200 OK`
 - if `path` does not exist, creates a new item and returns `201 Created`
 - `overwritten` contains previous preview or exported content
+- if `created` is omitted, the existing stored `created` is preserved
 
 ### Topic rebuild
 
@@ -431,8 +462,11 @@ Topic entries in this list use:
 
 - `type = "topic"`
 - `title = stored topic title`
+- `created = stored created or "illegal"`
 - `content = member count as string`
 - `ttl = null`
+- list order prefers valid `created` descending, newest first
+- entries with missing or invalid `created` fall behind valid ones and then sort by `path`
 
 ### List all topics
 
@@ -491,6 +525,7 @@ Example response:
   "path": "anime",
   "type": "topic",
   "title": "anime",
+  "created": "2022-10-11T01:11:01Z",
   "ttl": null,
   "content": "2"
 }
@@ -531,6 +566,12 @@ Cache headers:
 ## Topic Rendering Rules
 
 Topic home is generated from `topic:<topic>:items`.
+
+Ordering rules:
+
+- topic members prefer stored `created` descending, newest first
+- if member `created` is missing or invalid, rendering falls back to the member zset score
+- rendered date text uses the resolved time after this fallback
 
 Source Markdown shape:
 
@@ -611,6 +652,7 @@ Semantics:
 
 - member: topic-relative path
 - score: last updated Unix timestamp in seconds
+- used as topic render fallback when stored `created` is missing or invalid
 
 Example:
 

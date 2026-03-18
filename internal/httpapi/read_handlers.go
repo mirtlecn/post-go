@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"post-go/internal/storage"
 	"post-go/internal/utils"
@@ -79,6 +80,7 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		Path:    topicName,
 		Type:    topicType,
 		Title:   topicDisplayTitle(topicName, storedValue),
+		Created: responseCreatedValue(storedValue.Created),
 		Content: topicCountString(count),
 	})
 }
@@ -142,6 +144,7 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 			Path:    topicName,
 			Type:    topicType,
 			Title:   topicDisplayTitle(topicName, storedValue),
+			Created: responseCreatedValue(storedValue.Created),
 			Content: topicCountString(count),
 		})
 	}
@@ -238,7 +241,12 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	links := make([]ItemResponse, 0, len(keys))
+	type listEntry struct {
+		item    ItemResponse
+		sortAt  time.Time
+		hasTime bool
+	}
+	links := make([]listEntry, 0, len(keys))
 	for _, key := range keys {
 		path := strings.TrimPrefix(key, storage.LinksPrefix)
 		storedValue, exists := storedValues[key]
@@ -265,7 +273,25 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 		if storedValue.Type == topicType {
 			item.Content = content
 		}
-		links = append(links, item)
+		createdAt, hasCreated := parseStoredCreatedTime(storedValue.Created)
+		links = append(links, listEntry{
+			item:    item,
+			sortAt:  createdAt,
+			hasTime: hasCreated,
+		})
 	}
-	utils.JSON(w, http.StatusOK, links)
+	sort.SliceStable(links, func(i, j int) bool {
+		if links[i].hasTime != links[j].hasTime {
+			return links[i].hasTime
+		}
+		if links[i].hasTime && !links[i].sortAt.Equal(links[j].sortAt) {
+			return links[i].sortAt.After(links[j].sortAt)
+		}
+		return links[i].item.Path < links[j].item.Path
+	})
+	items := make([]ItemResponse, 0, len(links))
+	for _, link := range links {
+		items = append(items, link.item)
+	}
+	utils.JSON(w, http.StatusOK, items)
 }

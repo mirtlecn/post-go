@@ -37,6 +37,11 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	ttlVal := r.FormValue("ttl")
 	titleVal := r.FormValue("title")
 	topicVal := r.FormValue("topic")
+	createdVal, createdProvided, err := parseCreatedFormValue(r.FormValue("created"))
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
+	}
 	var ttlMinutes int64
 	ttlMinutes, ttlProvided, err := parseTTLFormValue(ttlVal)
 	if err != nil {
@@ -95,6 +100,13 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 	key := storage.LinksPrefix + pathVal
 	existing, _ := rdb.Get(ctx, key).Result()
+	if !createdProvided {
+		if allowOverwrite && existing != "" {
+			createdVal = storage.ParseStoredValue(existing).Created
+		} else {
+			createdVal = time.Now().UTC().Format(time.RFC3339)
+		}
+	}
 	if existing != "" && storage.ParseStoredValue(existing).Type == topicType {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
 		return
@@ -147,6 +159,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Type:    "file",
 		Content: objectKey,
 		Title:   titleVal,
+		Created: createdVal,
 	})
 	existingTTL, _ := rdb.TTL(ctx, key).Result()
 	ttlResponse, err := setStoredValueWithTTL(ctx, rdb, key, storedValue, ttlMinutes, ttlProvided)
@@ -190,6 +203,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		Path:    pathVal,
 		Type:    "file",
 		Title:   titleVal,
+		Created: responseCreatedValue(createdVal),
 		Content: responseContent("file", objectKey, isExport),
 		TTL:     ttlResponse,
 	})

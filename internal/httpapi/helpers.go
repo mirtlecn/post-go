@@ -176,9 +176,51 @@ func buildItemResponse(domain, path string, storedValue storage.StoredValue, ttl
 		Path:    path,
 		Type:    storedValue.Type,
 		Title:   storedValue.Title,
+		Created: responseCreatedValue(storedValue.Created),
 		TTL:     ttl,
 		Content: responseContent(storedValue.Type, storedValue.Content, isExport),
 	}
+}
+
+func parseCreatedValue(raw any) (string, bool, error) {
+	if raw == nil {
+		return "", false, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", true, errors.New("`created` must be a string")
+	}
+	normalized, err := storage.NormalizeCreatedTime(value)
+	if err != nil {
+		return "", true, errors.New("`created` has invalid format")
+	}
+	return normalized, true, nil
+}
+
+func parseCreatedFormValue(raw string) (string, bool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", false, nil
+	}
+	normalized, err := storage.NormalizeCreatedTime(raw)
+	if err != nil {
+		return "", true, errors.New("`created` has invalid format")
+	}
+	return normalized, true, nil
+}
+
+func responseCreatedValue(raw string) string {
+	if _, err := storage.ParseCreatedTime(raw); err != nil {
+		return "illegal"
+	}
+	return raw
+}
+
+func parseStoredCreatedTime(raw string) (time.Time, bool) {
+	parsed, err := storage.ParseCreatedTime(raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func hasEmptyPathSegment(path string) bool {

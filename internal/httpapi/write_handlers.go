@@ -92,6 +92,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		Deleted: pathVal,
 		Type:    storedValue.Type,
 		Title:   storedValue.Title,
+		Created: responseCreatedValue(storedValue.Created),
 		Content: responseContent(storedValue.Type, storedValue.Content, isExport),
 	})
 	if resolvedPath.IsTopicItem {
@@ -135,6 +136,11 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 		return
 	}
+	createdVal, createdProvided, err := parseCreatedValue(body["created"])
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
+	}
 	ttlMinutes, ttlProvided, err := parseTTLValue(body["ttl"])
 	if err != nil {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
@@ -149,7 +155,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 	if typeInfo.InputType == topicType {
-		h.handleTopicCreate(w, r, rdb, pathVal, titleVal, ttlProvided, allowOverwrite)
+		h.handleTopicCreate(w, r, rdb, pathVal, titleVal, createdVal, createdProvided, ttlProvided, allowOverwrite)
 		return
 	}
 	if pathVal == "" {
@@ -249,13 +255,21 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		inputContent = normalizedURLContent
 	}
 	key := storage.LinksPrefix + pathVal
+	existing, _ := rdb.Get(ctx, key).Result()
+	existingTTL, _ := rdb.TTL(ctx, key).Result()
+	if !createdProvided {
+		if allowOverwrite && existing != "" {
+			createdVal = storage.ParseStoredValue(existing).Created
+		} else {
+			createdVal = time.Now().UTC().Format(time.RFC3339)
+		}
+	}
 	stored := storage.BuildStoredValue(storage.StoredValue{
 		Type:    contentType,
 		Content: inputContent,
 		Title:   titleVal,
+		Created: createdVal,
 	})
-	existing, _ := rdb.Get(ctx, key).Result()
-	existingTTL, _ := rdb.TTL(ctx, key).Result()
 	isExport := isExportRequest(r)
 	if existing != "" && !allowOverwrite {
 		existingValue := storage.ParseStoredValue(existing)
@@ -283,6 +297,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		Path:    pathVal,
 		Type:    contentType,
 		Title:   titleVal,
+		Created: responseCreatedValue(createdVal),
 		Content: responseContent(contentType, inputContent, isExport),
 		TTL:     ttlResponse,
 	}
@@ -324,7 +339,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	utils.JSON(w, status, result)
 }
 
-func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb redisStore, topicName, titleVal string, ttlProvided bool, allowOverwrite bool) {
+func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb redisStore, topicName, titleVal, createdVal string, createdProvided, ttlProvided bool, allowOverwrite bool) {
 	topicName = storage.NormalizePath(topicName)
 	if topicName == "" {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
@@ -353,16 +368,23 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		return
 	}
 	topicTitle := resolveTopicTitle(topicName, titleVal)
+	if !createdProvided {
+		createdVal = time.Now().UTC().Format(time.RFC3339)
+	}
 	if existing != "" {
 		existingStoredValue := storage.ParseStoredValue(existing)
 		if existingStoredValue.Type == topicType && strings.TrimSpace(titleVal) == "" {
 			topicTitle = topicDisplayTitle(topicName, existingStoredValue)
+		}
+		if allowOverwrite && !createdProvided {
+			createdVal = existingStoredValue.Created
 		}
 	}
 	if err := rdb.Set(ctx, storage.LinksPrefix+topicName, storage.BuildStoredValue(storage.StoredValue{
 		Type:    topicType,
 		Content: "",
 		Title:   topicTitle,
+		Created: createdVal,
 	}), 0).Err(); err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
@@ -393,6 +415,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		Path:    topicName,
 		Type:    topicType,
 		Title:   topicTitle,
+		Created: responseCreatedValue(createdVal),
 		Content: topicCountString(count),
 		TTL:     nil,
 	})
@@ -428,6 +451,7 @@ func (h *Handler) handleTopicDelete(w http.ResponseWriter, r *http.Request, rdb 
 		Deleted: topicName,
 		Type:    topicType,
 		Title:   topicDisplayTitle(topicName, storedValue),
+		Created: responseCreatedValue(storedValue.Created),
 		Content: topicCountString(count),
 	})
 }

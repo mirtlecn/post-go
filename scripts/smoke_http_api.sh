@@ -32,6 +32,7 @@ assert_status 201 "create text"
 assert_jq '.type == "text"' "create text type"
 assert_jq '.path == "'"$SMOKE_PREFIX"'-text"' "create text path"
 assert_jq '.title == "Greeting Card"' "create text title"
+assert_jq '.created | type == "string"' "create text created"
 pass "create text"
 
 RAW_VALUE="$(redis_get "surl:$SMOKE_PREFIX-text")"
@@ -44,6 +45,7 @@ api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-text"}' yes x-export 
 assert_status 200 "lookup text"
 assert_jq '.content == "hello"' "lookup text export"
 assert_jq '.title == "Greeting Card"' "lookup text title"
+assert_jq '.created | type == "string"' "lookup text created"
 pass "lookup text"
 
 PUBLIC_TEXT="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-text")"
@@ -119,6 +121,7 @@ api_json PUT "$POST_BASE_URL/" '{"url":"updated","path":"'"$SMOKE_PREFIX"'-confl
 assert_status 200 "overwrite existing"
 assert_jq '.overwritten == "first"' "overwrite existing body"
 assert_jq '.title == ""' "overwrite existing empty title"
+assert_jq '.created | type == "string"' "overwrite existing created"
 pass "overwrite existing"
 
 api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl","ttl":0}'
@@ -157,6 +160,7 @@ api_json GET "$POST_BASE_URL/" ''
 assert_status 200 "list items"
 assert_jq 'map(.path) | index("'"$SMOKE_PREFIX"'-text") != null' "list includes text item"
 assert_jq 'map(select(.path == "'"$SMOKE_PREFIX"'-text"))[0].title == "Greeting Card"' "list includes title"
+assert_jq 'map(select(.path == "'"$SMOKE_PREFIX"'-text"))[0].created | type == "string"' "list includes created"
 pass "list items"
 
 api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-md"}' yes x-export true

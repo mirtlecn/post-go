@@ -226,10 +226,11 @@ func TestHandleJSONCreateStoresValueOnSuccess(t *testing.T) {
 	if store.lastSetKey != "surl:note" {
 		t.Fatalf("expected key surl:note, got %q", store.lastSetKey)
 	}
-	expected := `{"type":"text","content":"hello"}`
-	if store.lastSetValue != expected {
-		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != "text" || stored.Content != "hello" {
+		t.Fatalf("unexpected stored value: %+v", stored)
 	}
+	assertRFC3339Value(t, stored.Created)
 	var body CreateResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -237,6 +238,7 @@ func TestHandleJSONCreateStoresValueOnSuccess(t *testing.T) {
 	if body.Title != "" {
 		t.Fatalf("expected empty title, got %q", body.Title)
 	}
+	assertRFC3339Value(t, body.Created)
 }
 
 func TestHandleJSONCreateNormalizesPathBeforeStore(t *testing.T) {
@@ -280,6 +282,49 @@ func TestHandleJSONCreateStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
 	}
 	if body.Warning != "" {
 		t.Fatalf("expected no warning, got %q", body.Warning)
+	}
+}
+
+func TestHandleJSONCreateNormalizesProvidedCreatedValue(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","created":"2022.10.11"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Created != "2022-10-10T16:00:00Z" {
+		t.Fatalf("expected normalized created, got %q", stored.Created)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Created != "2022-10-10T16:00:00Z" {
+		t.Fatalf("expected response created, got %+v", body)
+	}
+}
+
+func TestHandleJSONCreateRejectsInvalidCreatedValue(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"note","created":"2012.01.11 09"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`created` has invalid format" {
+		t.Fatalf("unexpected error payload: %+v", body)
 	}
 }
 
@@ -352,9 +397,9 @@ func TestHandleJSONCreateTrimsURLContentWhenTypeIsURL(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
-	expected := `{"type":"url","content":"https://example.com/path?q=1"}`
-	if store.lastSetValue != expected {
-		t.Fatalf("expected trimmed url content %s, got %q", expected, store.lastSetValue)
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != "url" || stored.Content != "https://example.com/path?q=1" {
+		t.Fatalf("unexpected stored value: %+v", stored)
 	}
 }
 
@@ -437,6 +482,7 @@ func TestHandleJSONCreateCreatesTopicHome(t *testing.T) {
 	if stored.Title != "anime" {
 		t.Fatalf("expected topic title fallback to path, got %q", stored.Title)
 	}
+	assertRFC3339Value(t, stored.Created)
 }
 
 func TestHandleJSONCreateStoresTopicTitle(t *testing.T) {
@@ -467,7 +513,7 @@ func TestHandleJSONCreateStoresTopicTitle(t *testing.T) {
 func TestHandleJSONUpdatePreservesTopicTitleWhenTitleOmitted(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
 		},
 	}
 	handler := newTestHandler(store)
@@ -484,12 +530,15 @@ func TestHandleJSONUpdatePreservesTopicTitleWhenTitleOmitted(t *testing.T) {
 	if stored.Title != "Anime Archive" {
 		t.Fatalf("expected preserved topic title, got %q", stored.Title)
 	}
+	if stored.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected preserved topic created, got %q", stored.Created)
+	}
 }
 
 func TestHandleJSONUpdateOverridesTopicTitleWhenProvided(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
 		},
 	}
 	handler := newTestHandler(store)
@@ -505,6 +554,38 @@ func TestHandleJSONUpdateOverridesTopicTitleWhenProvided(t *testing.T) {
 	stored := storage.ParseStoredValue(store.lastSetValue)
 	if stored.Title != "Anime Notes" {
 		t.Fatalf("expected updated topic title, got %q", stored.Title)
+	}
+	if stored.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected preserved topic created, got %q", stored.Created)
+	}
+}
+
+func TestHandleJSONUpdatePreservesCreatedWhenOmitted(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"url":"updated","path":"note"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, true)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected preserved created, got %q", stored.Created)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected response created, got %+v", body)
 	}
 }
 
@@ -738,6 +819,29 @@ func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
 	}
 }
 
+func TestRebuildTopicIndexPrefersStoredCreatedForSorting(t *testing.T) {
+	store := &fakeRedisStore{
+		zrangeResult: []redis.Z{
+			{Score: float64(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix()), Member: "old"},
+			{Score: float64(time.Date(2026, time.December, 22, 10, 0, 0, 0, time.UTC).Unix()), Member: "new"},
+		},
+		getResults: map[string]fakeStringResult{
+			"surl:anime":     {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+			"surl:anime/old": {value: `{"type":"text","content":"hello","title":"Old","created":"2022-10-11T01:11:01Z"}`},
+			"surl:anime/new": {value: `{"type":"text","content":"hello","title":"New","created":"2023-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	if err := handler.rebuildTopicIndex(context.Background(), store, "anime"); err != nil {
+		t.Fatalf("expected rebuild to succeed, got %v", err)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if strings.Index(stored.Content, ">New<") >= strings.Index(stored.Content, ">Old<") {
+		t.Fatalf("expected topic index to sort by created, got %q", stored.Content)
+	}
+}
+
 func TestHandleJSONCreateConflictIncludesExistingTitle(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -774,7 +878,7 @@ func TestHandleJSONCreateConflictIncludesExistingTitle(t *testing.T) {
 func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
 		},
 		zcardResult: 4,
 	}
@@ -799,13 +903,16 @@ func TestHandleLookupAuthedFromBodyReturnsTopicSummary(t *testing.T) {
 	if body.Title != "Anime Archive" {
 		t.Fatalf("expected topic title Anime Archive, got %+v", body)
 	}
+	if body.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected topic created, got %+v", body)
+	}
 }
 
 func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	store := &fakeRedisStore{
 		scanKeys: []string{"topic:anime:items", "topic:blog:items"},
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
 			"surl:blog":  {value: `{"type":"topic","content":"<html></html>"}`},
 		},
 		zcardResult: 1,
@@ -841,14 +948,17 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	if body[0].Title != "Anime Archive" || body[1].Title != "blog" {
 		t.Fatalf("expected topic titles, got %+v", body)
 	}
+	if body[0].Created != "2022-10-11T01:11:01Z" || body[1].Created != "illegal" {
+		t.Fatalf("expected topic created values, got %+v", body)
+	}
 }
 
 func TestHandleListUsesMGetForStoredValues(t *testing.T) {
 	store := &fakeRedisStore{
 		scanKeys: []string{"surl:note", "surl:anime"},
 		getResults: map[string]fakeStringResult{
-			"surl:note":  {value: `{"type":"text","content":"hello","title":"Greeting"}`},
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+			"surl:note":  {value: `{"type":"text","content":"hello","title":"Greeting","created":"2023-10-11T01:11:01Z"}`},
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
 		},
 		ttlResult:   0,
 		zcardResult: 3,
@@ -882,6 +992,34 @@ func TestHandleListUsesMGetForStoredValues(t *testing.T) {
 	if body[1].Path != "anime" || body[1].Type != topicType || body[1].Content != "2" {
 		t.Fatalf("unexpected topic item: %+v", body[1])
 	}
+	if body[0].Created != "2023-10-11T01:11:01Z" || body[1].Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected created values, got %+v", body)
+	}
+}
+
+func TestHandleListReturnsIllegalCreatedWhenStoredValueMissingCreated(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note"},
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+
+	handler.handleList(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body []ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body) != 1 || body[0].Created != "illegal" {
+		t.Fatalf("expected illegal created, got %+v", body)
+	}
 }
 
 func TestHandleJSONCreateUsesStoredTopicTitleForMarkdownBacklink(t *testing.T) {
@@ -913,7 +1051,7 @@ func TestHandleJSONCreateUsesStoredTopicTitleForMarkdownBacklink(t *testing.T) {
 func TestHandleLookupAuthedReturnsTTLForExpiringItem(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:note": {value: `{"type":"url","content":"https://example.com","title":"Greeting"}`},
+			"surl:note": {value: `{"type":"url","content":"https://example.com","title":"Greeting","created":"2022-10-11T01:11:01Z"}`},
 		},
 		ttlResult: 3 * time.Minute,
 	}
@@ -934,6 +1072,9 @@ func TestHandleLookupAuthedReturnsTTLForExpiringItem(t *testing.T) {
 	}
 	if body.TTL == nil || *body.TTL != 3 {
 		t.Fatalf("expected ttl 3, got %+v", body)
+	}
+	if body.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected created value, got %+v", body)
 	}
 }
 
@@ -981,7 +1122,7 @@ func TestHandleDeleteReturnsInternalErrorWhenRedisDeleteFails(t *testing.T) {
 func TestHandleDeleteReturnsSuccessAfterRedisDelete(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting"}`},
+			"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting","created":"2022-10-11T01:11:01Z"}`},
 		},
 	}
 	handler := newTestHandler(store)
@@ -1000,6 +1141,9 @@ func TestHandleDeleteReturnsSuccessAfterRedisDelete(t *testing.T) {
 	}
 	if body.Title != "Greeting" {
 		t.Fatalf("expected delete title Greeting, got %+v", body)
+	}
+	if body.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected delete created value, got %+v", body)
 	}
 }
 
@@ -1035,10 +1179,11 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	if store.lastSetKey != "surl:note.txt" {
 		t.Fatalf("expected stored key surl:note.txt, got %q", store.lastSetKey)
 	}
-	expected := `{"type":"file","content":"post/default/uploaded.txt"}`
-	if store.lastSetValue != expected {
-		t.Fatalf("expected stored value for uploaded object %s, got %q", expected, store.lastSetValue)
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != "file" || stored.Content != "post/default/uploaded.txt" {
+		t.Fatalf("unexpected stored value: %+v", stored)
 	}
+	assertRFC3339Value(t, stored.Created)
 	if len(fileStore.deleteCalls) != 0 {
 		t.Fatalf("expected no compensation delete, got %+v", fileStore.deleteCalls)
 	}
@@ -1049,6 +1194,7 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	if body.Title != "" {
 		t.Fatalf("expected empty title, got %q", body.Title)
 	}
+	assertRFC3339Value(t, body.Created)
 }
 
 func TestHandleFileUploadRollsBackWhenTopicSyncFails(t *testing.T) {
@@ -1174,10 +1320,11 @@ func TestHandleJSONCreateStoresTitleInJSONValue(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
-	expected := `{"type":"text","content":"hello","title":"Greeting"}`
-	if store.lastSetValue != expected {
-		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != "text" || stored.Content != "hello" || stored.Title != "Greeting" {
+		t.Fatalf("unexpected stored value: %+v", stored)
 	}
+	assertRFC3339Value(t, stored.Created)
 	var body CreateResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -1185,6 +1332,7 @@ func TestHandleJSONCreateStoresTitleInJSONValue(t *testing.T) {
 	if body.Title != "Greeting" {
 		t.Fatalf("expected create title Greeting, got %+v", body)
 	}
+	assertRFC3339Value(t, body.Created)
 }
 
 func TestHandleJSONCreateMD2HTMLUsesTitleForHTMLTitle(t *testing.T) {
@@ -1338,10 +1486,11 @@ func TestHandleFileUploadStoresTitleInJSONValue(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
-	expected := `{"type":"file","content":"post/default/uploaded.txt","title":"Attachment"}`
-	if store.lastSetValue != expected {
-		t.Fatalf("expected stored value %s, got %q", expected, store.lastSetValue)
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != "file" || stored.Content != "post/default/uploaded.txt" || stored.Title != "Attachment" {
+		t.Fatalf("unexpected stored value: %+v", stored)
 	}
+	assertRFC3339Value(t, stored.Created)
 	var body CreateResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -1349,6 +1498,7 @@ func TestHandleFileUploadStoresTitleInJSONValue(t *testing.T) {
 	if body.Title != "Attachment" {
 		t.Fatalf("expected create title Attachment, got %+v", body)
 	}
+	assertRFC3339Value(t, body.Created)
 }
 
 func TestHandleFileUploadReturnsMainFailureWhenCompensationFails(t *testing.T) {
@@ -1405,6 +1555,16 @@ func newTestHandlerWithDeps(store redisStore, fileStore fileObjectStore) *Handle
 				return nil
 			},
 		},
+	}
+}
+
+func assertRFC3339Value(t *testing.T, value string) {
+	t.Helper()
+	if value == "" {
+		t.Fatalf("expected non-empty created value")
+	}
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		t.Fatalf("expected RFC3339 created value, got %q (%v)", value, err)
 	}
 }
 

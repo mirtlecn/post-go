@@ -21,7 +21,7 @@ func TestBuildStoredValueMarshalsJSON(t *testing.T) {
 }
 
 func TestParseStoredValueReadsJSON(t *testing.T) {
-	value := ParseStoredValue(`{"type":"file","content":"post/default/file.txt","title":"Asset"}`)
+	value := ParseStoredValue(`{"type":"file","content":"post/default/file.txt","title":"Asset","created":"2022-10-11T01:11:01Z"}`)
 
 	if value.Type != "file" {
 		t.Fatalf("expected type file, got %q", value.Type)
@@ -31,6 +31,9 @@ func TestParseStoredValueReadsJSON(t *testing.T) {
 	}
 	if value.Title != "Asset" {
 		t.Fatalf("expected title Asset, got %q", value.Title)
+	}
+	if value.Created != "2022-10-11T01:11:01Z" {
+		t.Fatalf("expected created to match, got %q", value.Created)
 	}
 }
 
@@ -123,5 +126,32 @@ func TestValidatePathRejectsInvalidCharactersAndBounds(t *testing.T) {
 		if err := ValidatePath(path); err == nil {
 			t.Fatalf("expected path %q to be invalid", path)
 		}
+	}
+}
+
+func TestNormalizeCreatedTimeSupportsExpectedFormats(t *testing.T) {
+	tests := map[string]string{
+		"2022-10-11T09:11:01+08:00": "2022-10-11T01:11:01Z",
+		"2022-10-11T01:11:01Z":      "2022-10-11T01:11:01Z",
+		"2022-10-11 09:11:01":       "2022-10-11T01:11:01Z",
+		"2022-10-11":                "2022-10-10T16:00:00Z",
+		"2022.10.11":                "2022-10-10T16:00:00Z",
+		"2022/10/11":                "2022-10-10T16:00:00Z",
+	}
+
+	for input, expected := range tests {
+		normalized, err := NormalizeCreatedTime(input)
+		if err != nil {
+			t.Fatalf("expected %q to parse, got %v", input, err)
+		}
+		if normalized != expected {
+			t.Fatalf("expected normalized %q for %q, got %q", expected, input, normalized)
+		}
+	}
+}
+
+func TestNormalizeCreatedTimeRejectsInvalidFormat(t *testing.T) {
+	if _, err := NormalizeCreatedTime("2012.01.11 09"); err == nil {
+		t.Fatalf("expected invalid created format")
 	}
 }

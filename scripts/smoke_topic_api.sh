@@ -22,6 +22,7 @@ assert_status 201 "create topic via alias"
 assert_jq '.type == "topic"' "create topic type"
 assert_jq '.content == "0"' "create topic count"
 assert_jq '.title == "Anime Archive"' "create topic title"
+assert_jq '.created | type == "string"' "create topic created"
 pass "create topic via alias"
 
 TOPIC_RAW="$(redis_get "surl:$TOPIC")"
@@ -44,6 +45,7 @@ assert_status 200 "topic lookup"
 assert_jq '.type == "topic"' "topic lookup type"
 assert_jq '.content == "0"' "topic lookup count"
 assert_jq '.title == "Anime Archive"' "topic lookup title"
+assert_jq '.created | type == "string"' "topic lookup created"
 pass "topic lookup"
 
 TOPIC_HOME="$(curl -sS "$POST_BASE_URL/$TOPIC")"
@@ -70,10 +72,11 @@ assert_status 400 "reject mismatched topic path"
 assert_jq '.error == "`topic` and `path` must match"' "reject mismatched topic path body"
 pass "reject mismatched topic path"
 
-api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC"'","path":"castle-notes","url":"# Castle\n\nHello","type":"md2html","title":"Castle Notes"}'
+api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC"'","path":"castle-notes","url":"# Castle\n\nHello","type":"md2html","title":"Castle Notes","created":"2022-10-11"}'
 assert_status 201 "create topic item via topic"
 assert_jq '.path == "'"$TOPIC"'/castle-notes"' "topic path rewrite"
 assert_jq '.title == "Castle Notes"' "create topic item title"
+assert_jq '.created == "2022-10-10T16:00:00Z"' "create topic item created"
 pass "create topic item via topic"
 
 ITEM_HTML="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes")"
@@ -83,9 +86,10 @@ assert_contains "$ITEM_HTML" "href=\"/$TOPIC\"" "topic item backlink href"
 assert_contains "$ITEM_HTML" "<strong>Home</strong>" "topic item home link label"
 pass "topic item render"
 
-api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/screening-signup","url":"https://example.com/screening","type":"url"}'
+api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/screening-signup","url":"https://example.com/screening","type":"url","created":"2023-10-11"}'
 assert_status 201 "create topic item via full path"
 assert_jq '.title == ""' "create topic item full path empty title"
+assert_jq '.created == "2023-10-10T16:00:00Z"' "create topic item full path created"
 pass "create topic item via full path"
 
 FILE_PATH="$TMP_DIR/topic-upload.txt"
@@ -126,12 +130,14 @@ pass "topic lookup after title update"
 TOPIC_HOME="$(curl -sS "$POST_BASE_URL/$TOPIC")"
 assert_contains "$TOPIC_HOME" "<title>Anime Notes</title>" "topic home updated title"
 assert_contains "$TOPIC_HOME" "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Notes</div>" "topic home updated heading"
-assert_contains "$TOPIC_HOME" "Castle Notes" "topic home first item"
 assert_contains "$TOPIC_HOME" "screening-signup" "topic home fallback title"
 assert_contains "$TOPIC_HOME" "↗" "topic home url mark"
 assert_contains "$TOPIC_HOME" "Asset File" "topic home file title"
 assert_contains "$TOPIC_HOME" "◫" "topic home file mark"
 assert_contains "$TOPIC_HOME" "href=\"/$TOPIC/castle-notes\"" "topic home absolute href"
+if [[ "$(printf '%s' "$TOPIC_HOME" | grep -bo 'screening-signup' | head -n1 | cut -d: -f1)" -ge "$(printf '%s' "$TOPIC_HOME" | grep -bo 'Castle Notes' | head -n1 | cut -d: -f1)" ]]; then
+  fail "topic home created order" "expected screening-signup before Castle Notes"
+fi
 pass "topic home rebuild"
 
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'"}'

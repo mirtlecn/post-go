@@ -7,6 +7,7 @@ type ItemResponse struct {
 	Path    string `json:"path"`
 	Type    string `json:"type"`
 	Title   string `json:"title"`
+	Created string `json:"created"`
 	TTL     *int64 `json:"ttl"`
 	Content string `json:"content"`
 }
@@ -16,6 +17,7 @@ type CreateResponse struct {
 	Path        string `json:"path"`
 	Type        string `json:"type"`
 	Title       string `json:"title"`
+	Created     string `json:"created"`
 	Content     string `json:"content"`
 	TTL         any    `json:"ttl"`
 	Overwritten string `json:"overwritten,omitempty"`
@@ -26,5 +28,6 @@ type DeleteResponse struct {
 	Deleted string `json:"deleted"`
 	Type    string `json:"type"`
 	Title   string `json:"title"`
+	Created string `json:"created"`
 	Content string `json:"content"`
 }
