@@ -10,6 +10,8 @@ import (
 	"post-go/internal/convert"
 )
 
+var displayTimeLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
 // Item describes a topic entry needed to build the index page.
 type Item struct {
 	Path      string
@@ -52,7 +54,7 @@ func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 			builder.WriteString(mark)
 		}
 		builder.WriteString(" ")
-		builder.WriteString(item.UpdatedAt.Format("2006-01-02"))
+		builder.WriteString(item.UpdatedAt.In(displayTimeLocation).Format("2006-01-02"))
 		builder.WriteString("\n")
 	}
 

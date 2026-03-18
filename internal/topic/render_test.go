@@ -138,3 +138,20 @@ func TestBuildIndexMarkdownUsesRootAbsoluteHrefForNestedTopic(t *testing.T) {
 		t.Fatalf("expected topic index to avoid browser-dependent relative href, got %q", output)
 	}
 }
+
+func TestBuildIndexMarkdownDisplaysDateInAsiaShanghai(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "castle-notes",
+			Type:      "text",
+			Title:     "Castle in the Sky Notes",
+			UpdatedAt: time.Date(2022, time.October, 10, 16, 0, 0, 0, time.UTC),
+		},
+	}
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	if !strings.Contains(output, "[Castle in the Sky Notes](</anime/castle-notes>) ☰ 2022-10-11") {
+		t.Fatalf("expected topic index date to use Asia/Shanghai, got %q", output)
+	}
+}

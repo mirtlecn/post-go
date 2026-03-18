@@ -112,6 +112,17 @@ func main() {
 	mustContain("title fallback", fallbackMarkdown, "[notes/howl-visual](</anime/notes/howl-visual>) 2026-12-19")
 	pass("title fallback")
 
+	shanghaiMarkdown := topic.BuildIndexMarkdown("anime", "Anime", []topic.Item{
+		{
+			Path:      "asia-time",
+			Type:      "text",
+			Title:     "Asia Time",
+			UpdatedAt: time.Date(2022, time.October, 10, 16, 0, 0, 0, time.UTC),
+		},
+	})
+	mustContain("shanghai date display", shanghaiMarkdown, "[Asia Time](</anime/asia-time>) ☰ 2022-10-11")
+	pass("shanghai date display")
+
 	indexHTML, err := topic.RenderIndexHTML("anime", "Anime", []topic.Item{
 		{
 			Path:      "howl-visual",

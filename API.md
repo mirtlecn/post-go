@@ -571,7 +571,7 @@ Ordering rules:
 
 - topic members prefer stored `created` descending, newest first
 - if member `created` is missing or invalid, rendering falls back to the member zset score
-- rendered date text uses the resolved time after this fallback
+- rendered date text uses the resolved time after this fallback, formatted in `Asia/Shanghai`
 
 Source Markdown shape:
 
