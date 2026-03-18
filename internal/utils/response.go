@@ -88,3 +88,8 @@ func itoa64(v int64) string {
 	}
 	return string(buf[i:])
 }
+
+// Itoa64 converts int64 to decimal string.
+func Itoa64(v int64) string {
+	return itoa64(v)
+}

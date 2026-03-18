@@ -56,6 +56,8 @@ Write-time aliases:
 
 - `convert` is accepted as an alias of `type`
 - `md2html` writes stored `type=html`
+  - generated HTML references built-in `/asset/...` resources served by this API
+  - KaTeX CSS remains an external dependency when display math is present
 - `qrcode` writes stored `type=text`
 
 Normalization rules:
@@ -270,6 +272,8 @@ Type behavior:
 - `md2html`
   - converts Markdown to full HTML before storing
   - generated HTML `<title>` uses stored `title`
+  - generated HTML uses built-in `/asset/...` CSS and JS resources
+  - display math keeps the upstream KaTeX stylesheet URL
 - `qrcode`
   - converts input to terminal QR text
 - `topic`
@@ -535,6 +539,7 @@ Markdown conversion rules:
 
 - all `md2html` content writes full HTML
 - generated HTML `<title>` uses stored `title`
+- generated HTML references built-in `/asset/...` resources except for the KaTeX stylesheet used by display math
 - topic Markdown content also gets a top backlink:
   - `◂ [Back to \<\<topic\>\>](/<topic>)`
 

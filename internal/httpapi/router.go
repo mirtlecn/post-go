@@ -84,6 +84,9 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePath(w http.ResponseWriter, r *http.Request) {
+	if h.handleEmbeddedAsset(w, r) {
+		return
+	}
 	pathRaw := storage.NormalizePath(strings.TrimPrefix(r.URL.Path, "/"))
 	if pathRaw == "" {
 		requestLogger{}.Infof("path empty for %s %s", r.Method, r.URL.Path)

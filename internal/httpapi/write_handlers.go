@@ -26,6 +26,10 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pathVal = storage.NormalizePath(pathVal)
+	if isReservedAssetPath(pathVal) {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", reservedAssetPathError(pathVal).Error(), nil, nil)
+		return
+	}
 	typeInfo, err := normalizeTypeAlias(body)
 	if err != nil {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
@@ -162,6 +166,10 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	if err := storage.ValidatePath(pathVal); err != nil {
 		requestLogger{}.Warnf("invalid path: %s (%v)", pathVal, err)
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
+	}
+	if isReservedAssetPath(pathVal) {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", reservedAssetPathError(pathVal).Error(), nil, nil)
 		return
 	}
 	if resolvedPath.IsTopicItem && resolvedPath.RelativePath == "" {

@@ -84,6 +84,10 @@ MD_HTML="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-md")"
 assert_contains "$MD_HTML" "<article class=\"markdown-body\">" "rendered html shell"
 assert_contains "$MD_HTML" "<h1 id=\"title\">Title</h1>" "rendered markdown heading"
 assert_contains "$MD_HTML" "<title>Markdown Title</title>" "rendered markdown title"
+assert_contains "$MD_HTML" "/asset/md-base-7f7c1c5a.css" "rendered markdown uses embedded base asset"
+EMBEDDED_ASSET_PATH="$(printf '%s' "$MD_HTML" | rg -o '/asset/[^"]+' -m 1)"
+EMBEDDED_ASSET_BODY="$(curl -sS -H "Referer: $POST_BASE_URL/$SMOKE_PREFIX-md" "$POST_BASE_URL$EMBEDDED_ASSET_PATH")"
+test -n "$EMBEDDED_ASSET_BODY"
 pass "rendered html"
 
 api_json POST "$POST_BASE_URL/" '{"url":"<p>hi</p>","path":"'"$SMOKE_PREFIX"'-html","type":"html"}'

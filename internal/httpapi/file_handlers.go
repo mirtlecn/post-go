@@ -74,6 +74,10 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 		return
 	}
+	if isReservedAssetPath(pathVal) {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", reservedAssetPathError(pathVal).Error(), nil, nil)
+		return
+	}
 	if resolvedPath.IsTopicItem && resolvedPath.RelativePath == "" {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
 		return

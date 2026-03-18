@@ -126,8 +126,12 @@ start_server() {
   PORT="$port" LINKS_REDIS_URL="$redis_url" SECRET_KEY="$secret_key" "$binary_path" >"$log_file" 2>&1 &
   SERVER_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if curl -sS "http://127.0.0.1:$port/" >/dev/null 2>&1 || grep -q "Server running" "$log_file" 2>/dev/null; then
+    if curl -sS "http://127.0.0.1:$port/" >/dev/null 2>&1; then
       return 0
+    fi
+    if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+      cat "$log_file" >&2 || true
+      fail "start server" "server exited before becoming ready on port $port"
     fi
     sleep 0.5
   done

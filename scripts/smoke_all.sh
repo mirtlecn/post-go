@@ -12,7 +12,7 @@ POST_TOKEN="${POST_TOKEN:-demo}"
 cd "$ROOT_DIR"
 
 echo "Building server binary..."
-go build -o "$SERVER_BIN" ./cmd/post-server
+make build BINARY="$SERVER_BIN"
 
 echo "Running regression tests..."
 go test ./...
@@ -22,6 +22,7 @@ echo "Running render smoke..."
 
 echo "Running HTTP API smoke..."
 start_server "$SERVER_BIN" 3012 "redis://localhost:6379/15" "$POST_TOKEN"
+POST_BASE_URL="http://127.0.0.1:3012" POST_TOKEN="$POST_TOKEN" LINKS_REDIS_URL="redis://localhost:6379/15" "$SCRIPT_DIR/smoke_embedded_assets.sh"
 POST_BASE_URL="http://127.0.0.1:3012" POST_TOKEN="$POST_TOKEN" LINKS_REDIS_URL="redis://localhost:6379/15" "$SCRIPT_DIR/smoke_http_api.sh"
 stop_server
 

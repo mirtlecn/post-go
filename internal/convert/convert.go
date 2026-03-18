@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/skip2/go-qrcode"
 	"html"
+	"post-go/internal/assets"
 	"regexp"
 	"strings"
 	"unicode"
@@ -39,7 +40,7 @@ func ConvertMarkdownToHTMLWithOptions(markdown string, options MarkdownOptions) 
 			extension.Footnote,
 			// GitHub Alerts (NOTE/TIP/IMPORTANT/WARNING/CAUTION)
 			callouts.AlertCallouts,
-			// Math (KaTeX) - low priority but enabled
+			// Math (KaTeX) follows the original master branch behavior.
 			&katex.Extender{},
 		),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
@@ -171,17 +172,7 @@ func CapitalizeTopicLabel(label string) string {
 }
 
 func wrapHTML(body, alertsStyle, pageTitle string) string {
-	// 基础资源
-	cssURL := "https://cdn.jsdelivr.net/gh/mirtlecn/public/ravel-gfm.min.css"
-	// cssURL := "https://cdn.jsdelivr.net/gh/sindresorhus/github-markdown-css/github-markdown.min.css"
 	darkBg := "#0d1117"
-
-	// 外部资源定义
-	hlCSSLight := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github.min.css"
-	hlCSSDark := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.min.css"
-	hlJS := "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"
-	tocJS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-addon.min.js"
-	tocCSS := "https://cdn.jsdelivr.net/gh/mirtlecn/public/gfm-addon.min.css"
 	katexCSS := "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
 
 	// 动态标签容器
@@ -192,19 +183,19 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 	reHeaders := regexp.MustCompile(`(?i)<h[1-6]`)
 	headerMatches := reHeaders.FindAllString(body, -1)
 	if len(headerMatches) >= 2 {
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + tocCSS + "\">\n")
-		extraBody.WriteString("<script src=\"" + tocJS + "\"></script>\n")
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("gfm_addon_css") + "\">\n")
+		extraBody.WriteString("<script src=\"" + assets.MustAssetURL("gfm_addon_js") + "\"></script>\n")
 	}
 
 	// 2. 检查代码高亮
 	if strings.Contains(body, "<code class=\"language-") {
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + hlCSSLight + "\" media=\"(prefers-color-scheme: light)\">\n")
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + hlCSSDark + "\" media=\"(prefers-color-scheme: dark)\">\n")
-		extraBody.WriteString("<script src=\"" + hlJS + "\" defer></script>\n")
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("highlight_light_css") + "\" media=\"(prefers-color-scheme: light)\">\n")
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("highlight_dark_css") + "\" media=\"(prefers-color-scheme: dark)\">\n")
+		extraBody.WriteString("<script src=\"" + assets.MustAssetURL("highlight_js") + "\" defer></script>\n")
 		extraBody.WriteString("<script>window.addEventListener('DOMContentLoaded', function(){ if (window.hljs && hljs.highlightAll) hljs.highlightAll(); });</script>\n")
 	}
 
-	// 3. 检查公式
+	// 3. Keep KaTeX CSS as an explicit external exception.
 	if strings.Contains(body, "<span class=\"katex-display\">") {
 		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + katexCSS + "\">\n")
 	}
@@ -215,7 +206,7 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		"<meta charset=\"utf-8\">\n" +
 		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimal-ui\">\n" +
 		"<title>" + html.EscapeString(pageTitle) + "</title>\n" +
-		"<link rel=\"stylesheet\" href=\"" + cssURL + "\">\n" +
+		"<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("base_css") + "\">\n" +
 		extraHead.String() +
 		"<style>\n" +
 		"  body { box-sizing: border-box; min-width: 200px; max-width: 838px; margin: 0 auto; padding: 45px; }\n" +

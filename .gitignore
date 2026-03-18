@@ -13,3 +13,5 @@ coverage.out
 
 .DS_Store
 /tmp/
+internal/assets/files/*
+!internal/assets/files/.gitkeep

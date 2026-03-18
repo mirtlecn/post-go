@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"post-go/internal/assets"
 	"strings"
 	"testing"
 )
@@ -60,5 +61,57 @@ func TestConvertMarkdownToHTMLWithOptionsEscapesBackLinkLabel(t *testing.T) {
 	}
 	if !strings.Contains(output, "<div style=\"font-size: 1.3em; font-weight: bold\">&lt;Anime&gt;</div>") {
 		t.Fatalf("expected escaped topic heading label, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLUsesEmbeddedBaseAsset(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("# Hello")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if strings.Contains(output, "cdn.jsdelivr.net") {
+		t.Fatalf("expected no external asset host, got %q", output)
+	}
+	if !strings.Contains(output, assets.MustAssetURL("base_css")) {
+		t.Fatalf("expected embedded base asset url, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLAddsEmbeddedHighlightAssetsWhenCodeExists(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("```go\nfmt.Println(\"hi\")\n```")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, assets.MustAssetURL("highlight_light_css")) {
+		t.Fatalf("expected light highlight css, got %q", output)
+	}
+	if !strings.Contains(output, assets.MustAssetURL("highlight_dark_css")) {
+		t.Fatalf("expected dark highlight css, got %q", output)
+	}
+	if !strings.Contains(output, assets.MustAssetURL("highlight_js")) {
+		t.Fatalf("expected highlight js, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLAddsEmbeddedTOCAssetsWhenMultipleHeadersExist(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("# One\n\n## Two")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, assets.MustAssetURL("gfm_addon_css")) {
+		t.Fatalf("expected toc css, got %q", output)
+	}
+	if !strings.Contains(output, assets.MustAssetURL("gfm_addon_js")) {
+		t.Fatalf("expected toc js, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLAddsKaTeXCSSForDisplayMath(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("$$\na+b\n$$")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, "katex.min.css") {
+		t.Fatalf("expected external katex css link, got %q", output)
 	}
 }

@@ -1208,6 +1208,124 @@ func TestHandleJSONCreateMD2HTMLUsesTitleForHTMLTitle(t *testing.T) {
 	}
 }
 
+func TestServeHTTPRejectsDirectEmbeddedAssetAccess(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodGet, "/asset/md-base-7f7c1c5a.css", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "forbidden" {
+		t.Fatalf("expected forbidden error payload, got %+v", body)
+	}
+}
+
+func TestServeHTTPReturnsEmbeddedAssetForSameOriginReferer(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodGet, "/asset/md-base-7f7c1c5a.css", nil)
+	request.Host = "example.com"
+	request.Header.Set("Referer", "http://example.com/note")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Fatalf("expected immutable cache header, got %q", response.Header().Get("Cache-Control"))
+	}
+	if !strings.Contains(response.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("expected css content type, got %q", response.Header().Get("Content-Type"))
+	}
+	if response.Body.Len() == 0 {
+		t.Fatalf("expected asset body")
+	}
+}
+
+func TestServeHTTPReturnsEmbeddedAssetHeadersForHEAD(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodHead, "/asset/highlight-core-b7ec7622.js", nil)
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("expected empty body for HEAD, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRejectsUnsupportedMethodForReservedAssetPath(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodDelete, "/asset/md-base-7f7c1c5a.css", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status 405, got %d", response.Code)
+	}
+	if response.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected allow header, got %q", response.Header().Get("Allow"))
+	}
+}
+
+func TestServeHTTPLeavesUnknownAssetPathToLookupFlow(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodGet, "/asset/not-exist.txt", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", response.Code)
+	}
+}
+
+func TestHandleJSONCreateRejectsReservedAssetPath(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"asset/md-base-7f7c1c5a.css","type":"text"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "invalid_request" {
+		t.Fatalf("expected invalid_request, got %+v", body)
+	}
+}
+
+func TestHandleDeleteRejectsReservedAssetPath(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"asset/md-base-7f7c1c5a.css","type":"text"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "invalid_request" {
+		t.Fatalf("expected invalid_request, got %+v", body)
+	}
+}
+
 func TestHandleFileUploadStoresTitleInJSONValue(t *testing.T) {
 	store := &fakeRedisStore{}
 	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}

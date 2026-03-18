@@ -1,0 +1,44 @@
+[
+  {
+    "key": "base_css",
+    "route_path": "/asset/md-base-7f7c1c5a.css",
+    "file_name": "md-base-7f7c1c5a.css",
+    "content_type": "text/css; charset=utf-8",
+    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/refs/heads/main/ravel-gfm.css"
+  },
+  {
+    "key": "highlight_light_css",
+    "route_path": "/asset/highlight-light-a731e676.css",
+    "file_name": "highlight-light-a731e676.css",
+    "content_type": "text/css; charset=utf-8",
+    "source_link": "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github.min.css"
+  },
+  {
+    "key": "highlight_dark_css",
+    "route_path": "/asset/highlight-dark-fd8ca14b.css",
+    "file_name": "highlight-dark-fd8ca14b.css",
+    "content_type": "text/css; charset=utf-8",
+    "source_link": "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.min.css"
+  },
+  {
+    "key": "highlight_js",
+    "route_path": "/asset/highlight-core-b7ec7622.js",
+    "file_name": "highlight-core-b7ec7622.js",
+    "content_type": "application/javascript; charset=utf-8",
+    "source_link": "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"
+  },
+  {
+    "key": "gfm_addon_css",
+    "route_path": "/asset/gfm-addon-css-f2d9455b.css",
+    "file_name": "gfm-addon-css-f2d9455b.css",
+    "content_type": "text/css; charset=utf-8",
+    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/refs/heads/main/gfm-addon.css"
+  },
+  {
+    "key": "gfm_addon_js",
+    "route_path": "/asset/gfm-addon-js-5fcb18f0.js",
+    "file_name": "gfm-addon-js-5fcb18f0.js",
+    "content_type": "application/javascript; charset=utf-8",
+    "source_link": "https://raw.githubusercontent.com/mirtlecn/public/refs/heads/main/gfm-addon.js"
+  }
+]
