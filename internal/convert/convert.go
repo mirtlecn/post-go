@@ -48,8 +48,8 @@ func ConvertMarkdownToHTMLWithOptions(markdown string, options MarkdownOptions) 
 	)
 
 	var buf bytes.Buffer
-	input := buildMarkdownInput(markdown, options)
-	if err := md.Convert([]byte(stripFrontMatter(input)), &buf); err != nil {
+	input := buildMarkdownInput(stripFrontMatter(markdown), options)
+	if err := md.Convert([]byte(input), &buf); err != nil {
 		return "", err
 	}
 	return wrapHTML(buf.String(), alertCSS(), options.PageTitle), nil

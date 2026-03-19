@@ -141,3 +141,23 @@ func TestConvertMarkdownToHTMLKeepsInputWithoutClosingFrontMatterDelimiter(t *te
 		t.Fatalf("expected content after opening marker to remain, got %q", output)
 	}
 }
+
+func TestConvertMarkdownToHTMLWithOptionsStripsYAMLFrontMatter(t *testing.T) {
+	output, err := ConvertMarkdownToHTMLWithOptions("---\ndate: 2015/12/01\ntitle: Hello\n---\n# Body", MarkdownOptions{
+		PageTitle:      "Anime Archive",
+		TopicBackLink:  "/anime",
+		TopicBackLabel: "anime",
+	})
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if strings.Contains(output, "date: 2015/12/01") || strings.Contains(output, "title: Hello") {
+		t.Fatalf("expected yaml front matter to be removed before adding topic chrome, got %q", output)
+	}
+	if !strings.Contains(output, `<a href="/anime"><strong>Home</strong></a>`) {
+		t.Fatalf("expected topic backlink to remain, got %q", output)
+	}
+	if !strings.Contains(output, "<h1 id=\"body\">Body</h1>") {
+		t.Fatalf("expected markdown body to remain, got %q", output)
+	}
+}
