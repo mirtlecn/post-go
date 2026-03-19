@@ -1438,6 +1438,49 @@ func TestServeHTTPLeavesUnknownAssetPathToLookupFlow(t *testing.T) {
 	}
 }
 
+func TestServeHTTPReturnsTopicHomeWithTopicCacheHeader(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html><body>Anime</body></html>","title":"Anime Archive"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/anime", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Cache-Control") != topicCacheControl {
+		t.Fatalf("expected topic cache header %q, got %q", topicCacheControl, response.Header().Get("Cache-Control"))
+	}
+	if !strings.Contains(response.Body.String(), "Anime") {
+		t.Fatalf("expected topic body, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPReturnsHTMLWithDefaultPublicCacheHeader(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"html","content":"<html><body>Note</body></html>","title":"Note"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/note", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Cache-Control") != publicCacheControl {
+		t.Fatalf("expected default cache header %q, got %q", publicCacheControl, response.Header().Get("Cache-Control"))
+	}
+}
+
 func TestHandleJSONCreateRejectsReservedAssetPath(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)

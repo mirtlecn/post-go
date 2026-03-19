@@ -197,6 +197,7 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		utils.Redirect(w, r, storedValue.Content, false)
 		return
 	case topicType:
+		w.Header().Set("Cache-Control", topicCacheControl)
 		utils.HTML(w, http.StatusOK, storedValue.Content, true)
 		return
 	case "html":

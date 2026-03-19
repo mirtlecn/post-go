@@ -53,6 +53,10 @@ assert_contains "$TOPIC_HOME" "<title>Anime Archive</title>" "topic home title"
 assert_contains "$TOPIC_HOME" "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>" "topic home heading"
 pass "topic home render"
 
+TOPIC_HOME_HEADERS="$(curl -sSI "$POST_BASE_URL/$TOPIC")"
+assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=28800, s-maxage=28800" "topic home cache"
+pass "topic home cache"
+
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic","ttl":10}'
 assert_status 400 "reject topic ttl"
 assert_jq '.error == "topic does not support ttl"' "reject topic ttl body"
@@ -139,6 +143,10 @@ if [[ "$(printf '%s' "$TOPIC_HOME" | grep -bo 'screening-signup' | head -n1 | cu
   fail "topic home created order" "expected screening-signup before Castle Notes"
 fi
 pass "topic home rebuild"
+
+TOPIC_HOME_HEADERS="$(curl -sSI "$POST_BASE_URL/$TOPIC")"
+assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=28800, s-maxage=28800" "topic home cache after rebuild"
+pass "topic home cache after rebuild"
 
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'"}'
 assert_status 400 "protect topic home delete"

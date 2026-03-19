@@ -34,7 +34,7 @@ func Error(w http.ResponseWriter, status int, code, message string, hint any, de
 // Text writes plain text response.
 func Text(w http.ResponseWriter, status int, text string, cache bool) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if cache {
+	if cache && w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=86400")
 	}
 	w.WriteHeader(status)
@@ -45,7 +45,7 @@ func Text(w http.ResponseWriter, status int, text string, cache bool) {
 // HTML writes HTML response.
 func HTML(w http.ResponseWriter, status int, html string, cache bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if cache {
+	if cache && w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=86400")
 	}
 	w.WriteHeader(status)
@@ -54,7 +54,7 @@ func HTML(w http.ResponseWriter, status int, html string, cache bool) {
 
 // Redirect sends 302 redirect.
 func Redirect(w http.ResponseWriter, r *http.Request, url string, cache bool) {
-	if cache {
+	if cache && w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=86400")
 	}
 	http.Redirect(w, r, url, http.StatusFound)
@@ -68,7 +68,7 @@ func Binary(w http.ResponseWriter, status int, body []byte, contentType string, 
 	if contentLength > 0 {
 		w.Header().Set("Content-Length", itoa64(contentLength))
 	}
-	if cache {
+	if cache && w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=86400")
 	}
 	w.WriteHeader(status)

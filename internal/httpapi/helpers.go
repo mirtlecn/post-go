@@ -17,6 +17,8 @@ const (
 	topicHomeManagedError = "topic home must be managed with `type=topic`"
 	maxTTLMinutes         = int64(525600)
 	maxTTLSeconds         = int64(31536000)
+	publicCacheControl    = "public, max-age=86400, s-maxage=86400"
+	topicCacheControl     = "public, max-age=28800, s-maxage=28800"
 )
 
 func randomPath() string {
