@@ -116,13 +116,19 @@ func TestConvertMarkdownToHTMLAddsKaTeXCSSForDisplayMath(t *testing.T) {
 	}
 }
 
-func TestConvertMarkdownToHTMLStripsYAMLFrontMatter(t *testing.T) {
+func TestConvertMarkdownToHTMLRendersYAMLFrontMatterBlock(t *testing.T) {
 	output, err := ConvertMarkdownToHTML("---\ndate: 2015/12/01\ntitle: Hello\n---\nnihc\n\"\"\"")
 	if err != nil {
 		t.Fatalf("expected conversion to succeed, got %v", err)
 	}
-	if strings.Contains(output, "date: 2015/12/01") || strings.Contains(output, "title: Hello") {
-		t.Fatalf("expected yaml front matter to be removed, got %q", output)
+	if !strings.Contains(output, "Front Matter") {
+		t.Fatalf("expected yaml front matter header to be rendered, got %q", output)
+	}
+	if !strings.Contains(output, "<code class=\"language-yaml\">") {
+		t.Fatalf("expected yaml front matter code block, got %q", output)
+	}
+	if !strings.Contains(output, "date: 2015/12/01") || !strings.Contains(output, "title: Hello") {
+		t.Fatalf("expected yaml front matter values to be rendered, got %q", output)
 	}
 	if !strings.Contains(output, "<p>nihc\n&quot;&quot;&quot;</p>") {
 		t.Fatalf("expected markdown body to remain, got %q", output)
@@ -139,5 +145,26 @@ func TestConvertMarkdownToHTMLKeepsInputWithoutClosingFrontMatterDelimiter(t *te
 	}
 	if !strings.Contains(output, "<p>not: closed\nbody</p>") {
 		t.Fatalf("expected content after opening marker to remain, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLWithOptionsRendersBackLinkBeforeFrontMatter(t *testing.T) {
+	output, err := ConvertMarkdownToHTMLWithOptions("---\ntitle: Hello\n---\n# Body", MarkdownOptions{
+		PageTitle:      "Anime Archive",
+		TopicBackLink:  "/anime",
+		TopicBackLabel: "anime",
+	})
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+
+	backLinkIndex := strings.Index(output, `<a href="/anime"><strong>Home</strong></a>`)
+	frontMatterIndex := strings.Index(output, "Front Matter")
+	bodyIndex := strings.Index(output, "<h1 id=\"body\">Body</h1>")
+	if backLinkIndex == -1 || frontMatterIndex == -1 || bodyIndex == -1 {
+		t.Fatalf("expected backlink, front matter, and body to be rendered, got %q", output)
+	}
+	if !(backLinkIndex < frontMatterIndex && frontMatterIndex < bodyIndex) {
+		t.Fatalf("expected backlink before front matter before body, got %q", output)
 	}
 }

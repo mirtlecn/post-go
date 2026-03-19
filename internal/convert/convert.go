@@ -18,6 +18,8 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
+	"go.abhg.dev/goldmark/frontmatter"
+	"go.yaml.in/yaml/v3"
 )
 
 // MarkdownOptions customizes Markdown-to-HTML rendering.
@@ -34,25 +36,43 @@ func ConvertMarkdownToHTML(markdown string) (string, error) {
 
 // ConvertMarkdownToHTMLWithOptions converts Markdown (GFM) to HTML with optional page metadata.
 func ConvertMarkdownToHTMLWithOptions(markdown string, options MarkdownOptions) (string, error) {
+	enableFrontMatter := hasClosedFrontMatter(markdown)
+
+	extensions := []goldmark.Extender{
+		extension.GFM,
+		extension.Footnote,
+		// GitHub Alerts (NOTE/TIP/IMPORTANT/WARNING/CAUTION)
+		callouts.AlertCallouts,
+		// Math (KaTeX) follows the original master branch behavior.
+		&katex.Extender{},
+	}
+	if enableFrontMatter {
+		extensions = append(extensions, &frontmatter.Extender{})
+	}
+
 	md := goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			extension.Footnote,
-			// GitHub Alerts (NOTE/TIP/IMPORTANT/WARNING/CAUTION)
-			callouts.AlertCallouts,
-			// Math (KaTeX) follows the original master branch behavior.
-			&katex.Extender{},
-		),
+		goldmark.WithExtensions(extensions...),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 		goldmark.WithRendererOptions(gmhtml.WithUnsafe()),
 	)
 
 	var buf bytes.Buffer
-	input := buildMarkdownInput(markdown, options)
-	if err := md.Convert([]byte(stripFrontMatter(input)), &buf); err != nil {
+	context := parser.NewContext()
+	if err := md.Convert([]byte(markdown), &buf, parser.WithContext(context)); err != nil {
 		return "", err
 	}
-	return wrapHTML(buf.String(), alertCSS(), options.PageTitle), nil
+
+	frontMatterHTML, err := renderFrontMatterHTML(context)
+	if err != nil {
+		return "", err
+	}
+
+	var body strings.Builder
+	body.WriteString(renderLeadingHTML(options))
+	body.WriteString(frontMatterHTML)
+	body.WriteString(buf.String())
+
+	return wrapHTML(body.String(), alertCSS(), options.PageTitle), nil
 }
 
 // ConvertToQRCode converts text to a small terminal-friendly QR code string.
@@ -103,6 +123,7 @@ func ConvertToQRCode(text string) (string, error) {
 	return strings.TrimRight(sb.String(), "\n"), nil
 }
 
+// Legacy fallback kept unused during the front matter rendering experiment.
 func stripFrontMatter(input string) string {
 	if len(input) < 4 {
 		return input
@@ -126,6 +147,31 @@ func stripFrontMatter(input string) string {
 	}
 
 	return input
+}
+
+func hasClosedFrontMatter(input string) bool {
+	if len(input) < 4 {
+		return false
+	}
+	firstLineEnd, hasFirstLine := consumeFrontMatterLine(input, 0)
+	if !hasFirstLine || input[:firstLineEnd] != "---" {
+		return false
+	}
+
+	offset := skipFrontMatterLineBreak(input, firstLineEnd)
+	for offset < len(input) {
+		lineEnd, ok := consumeFrontMatterLine(input, offset)
+		if !ok {
+			return false
+		}
+		line := input[offset:lineEnd]
+		if line == "---" || line == "..." {
+			return true
+		}
+		offset = skipFrontMatterLineBreak(input, lineEnd)
+	}
+
+	return false
 }
 
 func consumeFrontMatterLine(input string, start int) (int, bool) {
@@ -152,9 +198,9 @@ func skipFrontMatterLineBreak(input string, index int) int {
 	return index
 }
 
-func buildMarkdownInput(markdown string, options MarkdownOptions) string {
+func renderLeadingHTML(options MarkdownOptions) string {
 	if options.TopicBackLink == "" {
-		return markdown
+		return ""
 	}
 	backLabel := options.TopicBackLabel
 	if backLabel == "" {
@@ -163,33 +209,17 @@ func buildMarkdownInput(markdown string, options MarkdownOptions) string {
 	var builder strings.Builder
 	builder.WriteString("<div style=\"font-size: 1.3em; font-weight: bold\">")
 	builder.WriteString(html.EscapeString(CapitalizeTopicLabel(backLabel)))
-	builder.WriteString("</div>\n\n")
-	builder.WriteString("[**Home**](")
-	builder.WriteString(formatMarkdownLinkDestination(options.TopicBackLink))
-	builder.WriteString(")")
+	builder.WriteString("</div>\n")
+	builder.WriteString("<p><a href=\"")
+	builder.WriteString(html.EscapeString(options.TopicBackLink))
+	builder.WriteString("\"><strong>Home</strong></a>")
 	if options.PageTitle != "" {
 		builder.WriteString(" / <span style=\"color: #666;\">")
 		builder.WriteString(html.EscapeString(options.PageTitle))
 		builder.WriteString("</span>")
 	}
-	builder.WriteString("\n\n\n\n\n\n")
-	builder.WriteString(markdown)
+	builder.WriteString("</p>\n")
 	return builder.String()
-}
-
-func escapeMarkdownLinkText(text string) string {
-	replacer := strings.NewReplacer(
-		"\\", "\\\\",
-		"<", "\\<",
-		">", "\\>",
-		"[", "\\[",
-		"]", "\\]",
-	)
-	return replacer.Replace(text)
-}
-
-func formatMarkdownLinkDestination(destination string) string {
-	return "<" + destination + ">"
 }
 
 // CapitalizeTopicLabel uppercases the first rune of a topic label.
@@ -244,6 +274,9 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		"<style>\n" +
 		"  body { box-sizing: border-box; min-width: 200px; max-width: 838px; margin: 0 auto; padding: 45px; }\n" +
 		"  .markdown-body .markdown-alert { padding: 0.5rem 1rem; }\n" +
+		"  .markdown-body .frontmatter-yaml { margin: 1.25rem 0 1.5rem; border: 1px solid #d0d7de; border-radius: 8px; overflow: hidden; }\n" +
+		"  .markdown-body .frontmatter-yaml-title { margin: 0; padding: 0.6rem 0.9rem; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: #57606a; background: #f6f8fa; border-bottom: 1px solid #d0d7de; }\n" +
+		"  .markdown-body .frontmatter-yaml pre { margin: 0; border-radius: 0; }\n" +
 		alertsStyle + "\n" +
 		"  @media (prefers-color-scheme: dark) { body { background-color: " + darkBg + "; } }\n" +
 		"  @media (max-width: 767px) { body { max-width: 100%; padding: 25px; } }\n" +
@@ -256,6 +289,35 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		extraBody.String() +
 		"</body>\n" +
 		"</html>"
+}
+
+func renderFrontMatterHTML(context parser.Context) (string, error) {
+	data := frontmatter.Get(context)
+	if data == nil {
+		return "", nil
+	}
+
+	var metadata map[string]any
+	if err := data.Decode(&metadata); err != nil {
+		return "", err
+	}
+	if len(metadata) == 0 {
+		return "", nil
+	}
+
+	renderedYAML, err := yaml.Marshal(metadata)
+	if err != nil {
+		return "", err
+	}
+
+	var builder strings.Builder
+	builder.WriteString("<section class=\"frontmatter-yaml\">")
+	builder.WriteString("<div class=\"frontmatter-yaml-title\">Front Matter</div>")
+	builder.WriteString("<pre><code class=\"language-yaml\">")
+	builder.WriteString(html.EscapeString(strings.TrimSpace(string(renderedYAML))))
+	builder.WriteString("</code></pre>")
+	builder.WriteString("</section>\n")
+	return builder.String(), nil
 }
 
 func alertCSS() string {
