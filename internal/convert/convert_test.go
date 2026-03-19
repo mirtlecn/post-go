@@ -115,3 +115,29 @@ func TestConvertMarkdownToHTMLAddsKaTeXCSSForDisplayMath(t *testing.T) {
 		t.Fatalf("expected external katex css link, got %q", output)
 	}
 }
+
+func TestConvertMarkdownToHTMLStripsYAMLFrontMatter(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("---\ndate: 2015/12/01\ntitle: Hello\n---\nnihc\n\"\"\"")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if strings.Contains(output, "date: 2015/12/01") || strings.Contains(output, "title: Hello") {
+		t.Fatalf("expected yaml front matter to be removed, got %q", output)
+	}
+	if !strings.Contains(output, "<p>nihc\n&quot;&quot;&quot;</p>") {
+		t.Fatalf("expected markdown body to remain, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLKeepsInputWithoutClosingFrontMatterDelimiter(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("---\nnot: closed\nbody")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, "<hr>") {
+		t.Fatalf("expected markdown to be preserved when front matter is not closed, got %q", output)
+	}
+	if !strings.Contains(output, "<p>not: closed\nbody</p>") {
+		t.Fatalf("expected content after opening marker to remain, got %q", output)
+	}
+}

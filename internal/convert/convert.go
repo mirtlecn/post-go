@@ -104,19 +104,52 @@ func ConvertToQRCode(text string) (string, error) {
 }
 
 func stripFrontMatter(input string) string {
-	// Remove YAML front matter: --- ... ---
-	if len(input) < 6 {
+	if len(input) < 4 {
 		return input
 	}
-	if !bytes.HasPrefix([]byte(input), []byte("---")) {
+	firstLineEnd, hasFirstLine := consumeFrontMatterLine(input, 0)
+	if !hasFirstLine || input[:firstLineEnd] != "---" {
 		return input
 	}
-	// simple scan for second ---
-	idx := bytes.Index([]byte(input[3:]), []byte("\n---"))
-	if idx == -1 {
-		return input
+
+	offset := skipFrontMatterLineBreak(input, firstLineEnd)
+	for offset < len(input) {
+		lineEnd, ok := consumeFrontMatterLine(input, offset)
+		if !ok {
+			return input
+		}
+		line := input[offset:lineEnd]
+		if line == "---" || line == "..." {
+			return input[skipFrontMatterLineBreak(input, lineEnd):]
+		}
+		offset = skipFrontMatterLineBreak(input, lineEnd)
 	}
-	return input[3+idx+4:]
+
+	return input
+}
+
+func consumeFrontMatterLine(input string, start int) (int, bool) {
+	switch idx := bytes.IndexAny([]byte(input[start:]), "\r\n"); {
+	case idx >= 0:
+		return start + idx, true
+	case start < len(input):
+		return len(input), true
+	default:
+		return 0, false
+	}
+}
+
+func skipFrontMatterLineBreak(input string, index int) int {
+	if index >= len(input) {
+		return index
+	}
+	if input[index] == '\r' {
+		index++
+	}
+	if index < len(input) && input[index] == '\n' {
+		index++
+	}
+	return index
 }
 
 func buildMarkdownInput(markdown string, options MarkdownOptions) string {
