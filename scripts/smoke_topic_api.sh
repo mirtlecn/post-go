@@ -54,7 +54,7 @@ assert_contains "$TOPIC_HOME" "<div style=\"font-size: 1.3em; font-weight: bold\
 pass "topic home render"
 
 TOPIC_HOME_HEADERS="$(curl -sSI "$POST_BASE_URL/$TOPIC")"
-assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=28800, s-maxage=28800" "topic home cache"
+assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=600, s-maxage=600" "topic home cache"
 pass "topic home cache"
 
 api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic","ttl":10}'
@@ -145,7 +145,7 @@ fi
 pass "topic home rebuild"
 
 TOPIC_HOME_HEADERS="$(curl -sSI "$POST_BASE_URL/$TOPIC")"
-assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=28800, s-maxage=28800" "topic home cache after rebuild"
+assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=600, s-maxage=600" "topic home cache after rebuild"
 pass "topic home cache after rebuild"
 
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'"}'

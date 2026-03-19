@@ -558,7 +558,7 @@ Reserved built-in asset route:
 Cache headers:
 
 - public `topic` responses set:
-  - `Cache-Control: public, max-age=28800, s-maxage=28800`
+  - `Cache-Control: public, max-age=600, s-maxage=600`
 - public `text`, `html`, `url`, `file` responses set:
   - `Cache-Control: public, max-age=86400, s-maxage=86400`
 - authenticated JSON responses do not set public cache headers
