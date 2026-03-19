@@ -202,6 +202,61 @@ assert_contains "$FILE_EXT_VALUE" '"type":"file"' "redis file json type"
 assert_contains "$FILE_EXT_VALUE" '"title":"Upload Attachment"' "redis file title"
 pass "file upload"
 
+FILE_AUTO_BODY="$TMP_DIR/file-auto.body"
+FILE_AUTO_STATUS="$TMP_DIR/file-auto.status"
+curl -sS -o "$FILE_AUTO_BODY" -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "file=@$FILE_PATH" \
+  -F "path=$SMOKE_PREFIX-file-auto" \
+  "$POST_BASE_URL/" >"$FILE_AUTO_STATUS"
+FILE_AUTO_HTTP_STATUS="$(cat "$FILE_AUTO_STATUS")"
+FILE_AUTO_HTTP_BODY="$(cat "$FILE_AUTO_BODY")"
+if [[ "$FILE_AUTO_HTTP_STATUS" != "201" ]]; then
+  fail "file upload auto content type" "expected HTTP 201, got $FILE_AUTO_HTTP_STATUS, body: $FILE_AUTO_HTTP_BODY"
+fi
+if ! jq -e '.type == "file"' >/dev/null <<<"$FILE_AUTO_HTTP_BODY"; then
+  fail "file upload auto content type type" "body: $FILE_AUTO_HTTP_BODY"
+fi
+FILE_AUTO_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-file-auto.txt")"
+assert_contains "$FILE_AUTO_HEADERS" "Content-Type: text/plain" "file upload auto content type header"
+FILE_AUTO_PUBLIC_BODY="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file-auto.txt")"
+assert_contains "$FILE_AUTO_PUBLIC_BODY" "upload-body" "file upload auto content type body"
+api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-file-auto.txt"}'
+assert_status 200 "delete auto content type file"
+assert_jq '.type == "file"' "delete auto content type file type"
+curl -sS -o "$TMP_DIR/file-auto-delete.body" -w "%{http_code}" "$POST_BASE_URL/$SMOKE_PREFIX-file-auto.txt" >"$TMP_DIR/file-auto-delete.status"
+if [[ "$(cat "$TMP_DIR/file-auto-delete.status")" != "404" ]]; then
+  fail "delete auto content type file public lookup" "expected HTTP 404 after delete, got $(cat "$TMP_DIR/file-auto-delete.status"), body: $(cat "$TMP_DIR/file-auto-delete.body")"
+fi
+pass "file upload auto content type"
+
+FILE_OCTET_BODY="$TMP_DIR/file-octet.body"
+FILE_OCTET_STATUS="$TMP_DIR/file-octet.status"
+curl -sS -o "$FILE_OCTET_BODY" -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "file=@$FILE_PATH;type=application/octet-stream" \
+  -F "path=$SMOKE_PREFIX-file-octet" \
+  "$POST_BASE_URL/" >"$FILE_OCTET_STATUS"
+FILE_OCTET_HTTP_STATUS="$(cat "$FILE_OCTET_STATUS")"
+FILE_OCTET_HTTP_BODY="$(cat "$FILE_OCTET_BODY")"
+if [[ "$FILE_OCTET_HTTP_STATUS" != "201" ]]; then
+  fail "file upload octet stream repair" "expected HTTP 201, got $FILE_OCTET_HTTP_STATUS, body: $FILE_OCTET_HTTP_BODY"
+fi
+FILE_OCTET_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-file-octet.txt")"
+assert_contains "$FILE_OCTET_HEADERS" "Content-Type: text/plain; charset=utf-8" "file upload octet stream repair header"
+FILE_OCTET_PUBLIC_BODY="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file-octet.txt")"
+assert_contains "$FILE_OCTET_PUBLIC_BODY" "upload-body" "file upload octet stream repair body"
+api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-file-octet.txt"}'
+assert_status 200 "delete octet stream repair file"
+assert_jq '.type == "file"' "delete octet stream repair file type"
+curl -sS -o "$TMP_DIR/file-octet-delete.body" -w "%{http_code}" "$POST_BASE_URL/$SMOKE_PREFIX-file-octet.txt" >"$TMP_DIR/file-octet-delete.status"
+if [[ "$(cat "$TMP_DIR/file-octet-delete.status")" != "404" ]]; then
+  fail "delete octet stream repair file public lookup" "expected HTTP 404 after delete, got $(cat "$TMP_DIR/file-octet-delete.status"), body: $(cat "$TMP_DIR/file-octet-delete.body")"
+fi
+pass "file upload octet stream repair"
+
 FILE_ZERO_BODY="$TMP_DIR/file-zero.body"
 FILE_ZERO_STATUS="$TMP_DIR/file-zero.status"
 curl -sS -o "$FILE_ZERO_BODY" -w "%{http_code}" \

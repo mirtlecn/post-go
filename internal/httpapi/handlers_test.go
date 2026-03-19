@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +63,7 @@ type fakeFileStore struct {
 	uploadObjectKey string
 	uploadErr       error
 	lastUploadTTL   int64
+	lastUploadType  string
 	deleteErr       error
 	deleteCalls     []string
 }
@@ -176,6 +178,7 @@ func (f *fakeRedisStore) ZCard(ctx context.Context, key string) *redis.IntCmd {
 
 func (f *fakeFileStore) UploadFile(ctx context.Context, filename string, size int64, contentType string, reader io.Reader, ttlSeconds int64) (string, error) {
 	f.lastUploadTTL = ttlSeconds
+	f.lastUploadType = contentType
 	if f.uploadErr != nil {
 		return "", f.uploadErr
 	}
@@ -1187,6 +1190,9 @@ func TestHandleFileUploadStoresObjectOnSuccess(t *testing.T) {
 	if len(fileStore.deleteCalls) != 0 {
 		t.Fatalf("expected no compensation delete, got %+v", fileStore.deleteCalls)
 	}
+	if fileStore.lastUploadType != "text/plain; charset=utf-8" {
+		t.Fatalf("expected inferred text/plain content type, got %q", fileStore.lastUploadType)
+	}
 	var body CreateResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -1305,6 +1311,74 @@ func TestHandleFileUploadAppendsFilenameExtensionToPath(t *testing.T) {
 	}
 	if store.lastSetKey != "surl:custom/path.txt" {
 		t.Fatalf("expected path to include uploaded file extension, got %q", store.lastSetKey)
+	}
+}
+
+func TestHandleFileUploadKeepsExplicitMultipartContentType(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequestWithFileContentType(t, http.MethodPost, map[string]string{"path": "note"}, "note.txt", "hello", "text/plain")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if fileStore.lastUploadType != "text/plain" {
+		t.Fatalf("expected explicit multipart content type to be preserved, got %q", fileStore.lastUploadType)
+	}
+}
+
+func TestHandleFileUploadRepairsOctetStreamUsingExtension(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.pdf"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequestWithFileContentType(t, http.MethodPost, map[string]string{"path": "note"}, "note.pdf", "%PDF-1.7\nbody", "application/octet-stream")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if fileStore.lastUploadType != "application/pdf" {
+		t.Fatalf("expected octet-stream to be repaired to application/pdf, got %q", fileStore.lastUploadType)
+	}
+}
+
+func TestHandleFileUploadDetectsPDFWithoutExtension(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"path": "note"}, "note", "%PDF-1.7\nbody")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if fileStore.lastUploadType != "application/pdf" {
+		t.Fatalf("expected PDF content type from body detection, got %q", fileStore.lastUploadType)
+	}
+}
+
+func TestHandleFileUploadDetectsPNGWithoutExtension(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"path": "note"}, "note", "\x89PNG\r\n\x1a\npng-body")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if fileStore.lastUploadType != "image/png" {
+		t.Fatalf("expected PNG content type from body detection, got %q", fileStore.lastUploadType)
 	}
 }
 
@@ -1612,11 +1686,20 @@ func assertRFC3339Value(t *testing.T, value string) {
 }
 
 func newMultipartUploadRequest(t *testing.T, method string, fields map[string]string, filename string, content string) *http.Request {
+	return newMultipartUploadRequestWithFileContentType(t, method, fields, filename, content, "")
+}
+
+func newMultipartUploadRequestWithFileContentType(t *testing.T, method string, fields map[string]string, filename string, content string, fileContentType string) *http.Request {
 	t.Helper()
 
 	body := &strings.Builder{}
 	writer := multipart.NewWriter(body)
-	fileWriter, err := writer.CreateFormFile("file", filename)
+	partHeader := textproto.MIMEHeader{}
+	partHeader.Set("Content-Disposition", `form-data; name="file"; filename="`+filename+`"`)
+	if fileContentType != "" {
+		partHeader.Set("Content-Type", fileContentType)
+	}
+	fileWriter, err := writer.CreatePart(partHeader)
 	if err != nil {
 		t.Fatalf("failed to create file part: %v", err)
 	}

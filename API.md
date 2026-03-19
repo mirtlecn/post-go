@@ -334,6 +334,8 @@ Rules:
 
 - file uploads require configured S3-compatible storage
 - if `path` has no extension, uploaded file extension is appended
+- multipart part `Content-Type` is preserved when it is explicit and specific
+- when multipart part `Content-Type` is missing or generic such as `application/octet-stream`, the server infers MIME type from filename extension and then file bytes
 - topic path resolution follows the same rules as JSON create
 - `PUT` multipart upload requires `path`
 

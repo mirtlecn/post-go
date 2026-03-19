@@ -136,19 +136,19 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	size := header.Size
-	reader := io.Reader(file)
-	if size <= 0 {
-		buf, err := io.ReadAll(file)
-		if err != nil {
-			requestLogger{}.Errorf("read upload failed: %v", err)
-			utils.Error(w, http.StatusInternalServerError, "internal", "Failed to read upload", nil, nil)
-			return
-		}
-		size = int64(len(buf))
-		reader = bytes.NewReader(buf)
+	buffer, err := io.ReadAll(file)
+	if err != nil {
+		requestLogger{}.Errorf("read upload failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Failed to read upload", nil, nil)
+		return
 	}
+	if size <= 0 {
+		size = int64(len(buffer))
+	}
+	reader := bytes.NewReader(buffer)
+	contentType := resolveUploadContentType(header.Filename, header.Header.Get("Content-Type"), buffer)
 
-	objectKey, err := client.UploadFile(ctx, header.Filename, size, header.Header.Get("Content-Type"), reader, ttlSeconds)
+	objectKey, err := client.UploadFile(ctx, header.Filename, size, contentType, reader, ttlSeconds)
 	if err != nil {
 		requestLogger{}.Errorf("s3 upload failed: %v", err)
 		utils.Error(w, http.StatusInternalServerError, "internal", "Failed to upload file", nil, nil)
