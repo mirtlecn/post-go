@@ -1,87 +1,93 @@
-# Post-go API
+# Post-go REST API
 
-## Overview
+> 面向 API 使用者的参考文档（调用方式、字段、示例、错误处理）。
 
-- Base URL: `http://host:port`
-- Write operations require: `Authorization: Bearer <SECRET_KEY>`
-- Public read route: `GET /<path>`
-- Main management route: `GET|POST|PUT|DELETE /`
+## 1. Base URL
 
-This service has two resource layers:
-
-- regular item
-  - text, url, html, file
-- topic
-  - a namespace with its own home page and member index
-
-Examples:
-
-- regular item: `note`, `docs/intro`
-- topic home: `anime`
-- topic member: `anime/castle-notes`
-- nested topic home: `blog/2026`
-- nested topic member: `blog/2026/post-1`
-
----
-
-## Data Model
-
-### Stored content JSON
-
-All `surl:<path>` values are stored as JSON:
-
-```json
-{
-  "type": "text",
-  "content": "hello",
-  "title": "Greeting",
-  "created": "2022-10-11T01:11:01Z"
-}
+```text
+http://host:port
 ```
 
-Current fields:
+例如：
 
-- `type: string` required
-- `content: string` required
-- `title: string` optional
-- `created: string` optional
-
-Stored `type` values:
-
-- `url`
-- `text`
-- `html`
-- `file`
-- `topic`
-
-Write-time aliases:
-
-- `convert` is accepted as an alias of `type`
-- `md2html` writes stored `type=html`
-  - generated HTML references built-in `/asset/...` resources served by this API
-  - KaTeX CSS remains an external dependency when display math is present
-- `qrcode` writes stored `type=text`
-
-Normalization rules:
-
-- if both `type` and `convert` are provided, they must match
-- if neither is provided:
-  - URL-like input becomes `url`
-  - other input becomes `text`
-- stored `created` is normalized to UTC `RFC3339`
+```text
+http://localhost:3011
+```
 
 ---
 
-## Response Model
+## 2. Authentication
 
-### Item response
+写操作与管理查询需要 Bearer Token：
 
-Used by:
+```http
+Authorization: Bearer <SECRET_KEY>
+```
 
-- authenticated lookup
-- authenticated list
-- authenticated topic lookup
-- authenticated topic list
+需要鉴权的典型请求：
+
+- `POST /`
+- `PUT /`
+- `DELETE /`
+- `GET /`（管理接口）
+
+公开访问内容用 `GET /{path}`，无需鉴权。
+
+---
+
+## 3. Content Types（内容类型）
+
+创建/更新时通过 `type` 指定：
+
+- `text`：纯文本
+- `url`：链接（公开访问时 302 跳转）
+- `html`：HTML 内容
+- `file`：文件（multipart 上传）
+- `topic`：主题页（用于组织成员内容）
+- `md2html`：写入时将 Markdown 转为 `html`
+- `qrcode`：写入时将输入转为文本二维码（存储类型为 `text`）
+
+`convert` 可作为 `type` 的别名。
+
+---
+
+## 4. Common Request Fields
+
+JSON 请求常见字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `url` | string | 是* | 内容本体（文本、链接、Markdown 等） |
+| `path` | string | 否 | 短路径；省略时服务端可自动生成 |
+| `title` | string | 否 | 展示标题 |
+| `created` | string | 否 | 创建时间 |
+| `type` | string | 否 | 内容类型 |
+| `convert` | string | 否 | `type` 别名 |
+| `ttl` | integer | 否 | 过期时间（分钟） |
+| `topic` | string | 否 | 指定归属主题 |
+
+> `url` 在 `type=topic` 时不需要。
+
+### Path 规则
+
+- 最大长度：99
+- 允许字符：`a-z A-Z 0-9 - _ . / ( )`
+- 自动去除首尾多余 `/`
+- `path` 与 `path/` 视为同一路径
+- `asset/...` 为保留路径，不能用于业务内容
+
+### TTL 规则
+
+- 单位：分钟
+- 范围：`0 ~ 525600`
+- `0` 表示不过期
+- `topic` 本身不支持 TTL
+
+---
+
+## 5. Response Format
+
+### 5.1 Item Object
 
 ```json
 {
@@ -95,61 +101,17 @@ Used by:
 }
 ```
 
-Fields:
+字段说明：
 
-- `surl: string`
-- `path: string`
-- `type: string`
-- `title: string`
-- `created: string`
-- `ttl: number | null`
-- `content: string`
+- `surl`：完整访问地址
+- `path`：短路径
+- `type`：内容类型
+- `title`：标题（总会返回，缺省为 `""`）
+- `created`：时间（缺失/异常时可能返回 `"illegal"`）
+- `ttl`：剩余 TTL（无过期为 `null`）
+- `content`：默认是预览内容
 
-Rules:
-
-- all successful JSON responses always include `title`
-- if stored title is missing, API returns `""`
-- all successful JSON responses always include `created`
-- if stored `created` is missing or invalid, API returns `"illegal"`
-- `content` uses preview mode by default:
-  - `text` and `html` return the first `15` characters, then `...` when truncated
-  - `url` and `file` return the full stored value
-  - `topic` returns the current member count as a string
-- setting header `x-export: true` returns full stored content for non-topic items
-
-### Create / update response
-
-```json
-{
-  "surl": "http://host/path",
-  "path": "path",
-  "type": "text",
-  "title": "Greeting",
-  "created": "2022-10-11T01:11:01Z",
-  "content": "hello",
-  "ttl": 10,
-  "overwritten": "old value"
-}
-```
-
-Additional field:
-
-- `overwritten: string` optional
-- `warning: string` optional
-
-### Delete response
-
-```json
-{
-  "deleted": "path",
-  "type": "text",
-  "title": "Greeting",
-  "created": "2022-10-11T01:11:01Z",
-  "content": "hello"
-}
-```
-
-### Error response
+### 5.2 Error Object
 
 ```json
 {
@@ -160,58 +122,206 @@ Additional field:
 }
 ```
 
+常见 `code`：
+
+- `unauthorized`
+- `invalid_request`
+- `conflict`
+- `not_found`
+- `payload_too_large`
+- `internal`
+- `s3_not_configured`
+
 ---
 
-## Write Rules
+## 6. Endpoints
 
-### Path rules
+## 6.1 Create: `POST /`
 
-- if `path` is missing for normal item creation, server generates a random short path
-- all backend CRUD paths are normalized before use:
-  - non-slash-only input removes all leading `/`
-  - non-slash-only input removes all trailing `/`
-  - slash-only input such as `/` or `///` becomes `/`
-- normalized path is the only Redis key form:
-  - `path` and `path/` always map to the same key
-  - trailing slash never creates an extra key
-- allowed path characters:
-  - `a-z A-Z 0-9 - _ . / ( )`
-- max path length:
-  - `99`
-- paths under reserved built-in asset names such as `asset/...` are rejected for create, update, and delete
+创建普通内容、Topic，或上传文件。
 
-### TTL rules
+### 6.1.1 创建文本（JSON）
 
-- TTL unit is minutes
-- `ttl` must be an integer between `0` and `525600`
-- `ttl = 0` means no expiration
-- `525600` minutes equals `365` days
-- invalid TTL returns `400 invalid_request`
-- topic itself does not support TTL
-- topic display title uses stored `title` first, and falls back to topic `path` when empty
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "note",
+    "url": "hello",
+    "title": "Greeting",
+    "type": "text",
+    "ttl": 10
+  }'
+```
 
-### Created rules
+### 6.1.2 创建短链接（JSON）
 
-- `created` is optional in write requests
-- accepted input formats:
-  - `RFC3339`
-  - `RFC3339Nano`
-  - `2006-01-02 15:04:05`
-  - `2006-01-02`
-  - `2006.01.02`
-  - `2006/01/02`
-- inputs without timezone are parsed in `Asia/Shanghai`
-- date-only inputs use time `00:00:00`
-- stored value is normalized to UTC `RFC3339`
-- `POST` without `created` uses request receive time
-- `PUT` without `created` keeps the existing stored value
-- invalid input returns `400 invalid_request`
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "openai",
+    "url": "https://openai.com",
+    "type": "url"
+  }'
+```
 
-### Topic path resolution
+### 6.1.3 创建 Topic
 
-There are two ways to create a topic member:
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "anime",
+    "type": "topic",
+    "title": "Anime Archive"
+  }'
+```
 
-Form A:
+### 6.1.4 上传文件（multipart）
+
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "path=manual" \
+  -F "title=Manual" \
+  -F "file=@./manual.pdf"
+```
+
+说明：
+
+- 需要配置 S3 兼容存储
+- 如果 `path` 无扩展名，服务端会补上上传文件扩展名
+
+---
+
+## 6.2 Upsert: `PUT /`
+
+按 `path` 更新；不存在时创建。
+
+```bash
+curl -X PUT "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "note",
+    "url": "hello v2",
+    "type": "text"
+  }'
+```
+
+行为：
+
+- 已存在：更新，返回 `200`
+- 不存在：创建，返回 `201`
+- 可能返回 `overwritten` 字段（旧内容预览或导出内容）
+
+### Topic 重建
+
+```bash
+curl -X PUT "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "anime",
+    "type": "topic",
+    "title": "Anime Archive"
+  }'
+```
+
+用于刷新 Topic 首页与成员索引。
+
+---
+
+## 6.3 Delete: `DELETE /`
+
+### 删除普通内容
+
+```bash
+curl -X DELETE "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path": "note"}'
+```
+
+### 删除 Topic
+
+```bash
+curl -X DELETE "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "anime",
+    "type": "topic"
+  }'
+```
+
+> 删除 Topic 不会删除其子路径下的内容对象本身。
+
+---
+
+## 6.4 Management Query: `GET /`
+
+用于鉴权后的后台查询。
+
+### 列出全部内容
+
+```bash
+curl -X GET "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN"
+```
+
+### 查询单个 path
+
+```bash
+curl -X GET "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path": "note"}'
+```
+
+### 查询 Topic
+
+```bash
+curl -X GET "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "anime",
+    "type": "topic"
+  }'
+```
+
+---
+
+## 6.5 Public Read: `GET /{path}`
+
+公开访问路径。
+
+不同 `type` 的返回行为：
+
+- `url`：`302 Found` 跳转
+- `text`：返回纯文本
+- `html`：返回 HTML
+- `file`：返回文件流
+- `topic`：返回主题页 HTML
+
+示例：
+
+```bash
+curl -i "$POST_BASE_URL/note"
+```
+
+---
+
+## 7. Topic 用法
+
+有两种把内容写入 Topic 的方式：
+
+### 方式 A：显式指定 `topic`
 
 ```json
 {
@@ -222,7 +332,7 @@ Form A:
 }
 ```
 
-Form B:
+### 方式 B：直接使用带前缀路径
 
 ```json
 {
@@ -232,508 +342,53 @@ Form B:
 }
 ```
 
-Resolution rules:
-
-- if `topic` is provided, that topic must already exist
-- when `topic` is provided, `path` is normalized first
-- when `topic` is provided and normalized `path` contains no `/`, it is treated as `<topic>/<path>`
-- when `topic` is provided, normalized `path = "/"` is rejected
-- when `topic` is provided, empty topic members such as `anime//castle` are rejected
-- if `path` starts with an existing topic prefix, it is treated as a topic member
-- if multiple topic prefixes match, the longest existing prefix wins
-- topic item create/update returns success only after:
-  - item content is stored
-  - `topic:<topic>:items` is updated
-  - topic home is rebuilt
-
-Example:
-
-- existing topics:
-  - `blog`
-  - `blog/2026`
-- request path:
-  - `blog/2026/post-1`
-- resolved topic:
-  - `blog/2026`
-- resolved relative path:
-  - `post-1`
-
-Protection rules:
-
-- if `path=<topic>` and that topic exists, normal `POST / PUT / DELETE` are rejected
-- topic home must be managed with `type=topic`
+如果同名前缀存在多个 Topic，系统会匹配**最长前缀**。
 
 ---
 
-## REST API
+## 8. Export Mode
 
-## `POST /`
+在请求头加：
 
-Create a regular item, topic, or file upload.
-
-### JSON request
-
-```json
-{
-  "url": "hello",
-  "path": "note",
-  "title": "Greeting",
-  "created": "2022-10-11",
-  "type": "text",
-  "ttl": 10,
-  "topic": "anime"
-}
-```
-
-Supported fields:
-
-- `url: string` required
-- `path: string` optional
-- `title: string` optional
-- `created: string` optional
-- `type: string` optional
-- `convert: string` optional alias of `type`
-- `ttl: number` optional
-- `topic: string` optional
-
-Type behavior:
-
-- `url`
-  - validates URL and trims surrounding spaces
-- `text`
-  - stores plain text
-- `html`
-  - stores raw HTML
-- `md2html`
-  - converts Markdown to full HTML before storing
-  - generated HTML `<title>` uses stored `title`
-  - generated HTML uses built-in `/asset/...` CSS and JS resources
-  - display math keeps the upstream KaTeX stylesheet URL
-- `qrcode`
-  - converts input to terminal QR text
-- `topic`
-  - creates a topic resource
-  - supports optional `title`
-
-### Multipart upload
-
-Content type:
-
-- `multipart/form-data`
-
-Supported fields:
-
-- `file` required
-- `path` optional
-- `title` optional
-- `created` optional
-- `ttl` optional
-- `topic` optional
-
-Rules:
-
-- file uploads require configured S3-compatible storage
-- if `path` has no extension, uploaded file extension is appended
-- multipart part `Content-Type` is preserved when it is explicit and specific
-- when multipart part `Content-Type` is missing or generic such as `application/octet-stream`, the server infers MIME type from filename extension and then file bytes
-- topic path resolution follows the same rules as JSON create
-- `PUT` multipart upload requires `path`
-
-### Topic creation
-
-```json
-{
-  "path": "anime",
-  "type": "topic",
-  "title": "Anime Archive"
-}
-```
-
-Rules:
-
-- topic must be explicitly created
-- `path` is the topic name
-- `title` is optional and controls topic display title
-- when `title` is omitted or blank, the stored topic title falls back to `path`
-- topic home is stored at `surl:<topic>`
-- topic member set is stored at `topic:<topic>:items`
-- empty topic is valid
-
-Create response:
-
-```json
-{
-  "surl": "http://host/anime",
-  "path": "anime",
-  "type": "topic",
-  "title": "Anime Archive",
-  "created": "2022-10-11T01:11:01Z",
-  "content": "0",
-  "ttl": null
-}
-```
-
-## `PUT /`
-
-Upsert an item, or rebuild/create a topic.
-
-### Regular update
-
-- same body shape as `POST /`
-- if `path` already exists, overwrites the existing item and returns `200 OK`
-- if `path` does not exist, creates a new item and returns `201 Created`
-- `overwritten` contains previous preview or exported content
-- if `created` is omitted, the existing stored `created` is preserved
-
-### Topic rebuild
-
-```json
-{
-  "path": "anime",
-  "type": "topic",
-  "title": "Anime Archive"
-}
-```
-
-Rules:
-
-- rebuilds `surl:<topic>` from `topic:<topic>:items`
-- when `title` is provided for `type=topic`, updates the stored topic title
-- when `title` is omitted for `type=topic`, keeps the existing stored title
-- removes stale topic members whose `surl:<topic>/<path>` content no longer exists
-- does not change child items
-- if the topic does not exist yet, the same request creates it and returns `200 OK`
-
-## `DELETE /`
-
-Delete an item or a topic.
-
-### Regular delete
-
-```json
-{
-  "path": "note"
-}
-```
-
-Behavior:
-
-- deletes `surl:<path>`
-- if stored type is `file`, also deletes the S3 object
-- if the item belongs to a topic:
-  - removes member from `topic:<topic>:items`
-  - rebuilds topic home
-
-### Topic delete
-
-```json
-{
-  "path": "anime",
-  "type": "topic"
-}
-```
-
-Behavior:
-
-- deletes:
-  - `surl:<topic>`
-  - `topic:<topic>:items`
-- does not delete child items under `surl:<topic>/...`
-- delete response `content` is the current topic member count as string
-
-If the same topic is later recreated:
-
-- existing child items under the same prefix are re-adopted into the topic index
-
-## `GET /`
-
-Authenticated route.
-
-### List all items
-
-Request:
-
-- `GET /`
-- empty body
-
-Returns:
-
-- array of item responses
-
-Topic entries in this list use:
-
-- `type = "topic"`
-- `title = stored topic title`
-- `created = stored created or "illegal"`
-- `content = member count as string`
-- `ttl = null`
-- list order prefers valid `created` descending, newest first
-- entries with missing or invalid `created` fall behind valid ones and then sort by `path`
-
-### List all topics
-
-Request body:
-
-```json
-{
-  "type": "topic"
-}
-```
-
-Returns:
-
-- array of topic item responses
-
-Implementation note:
-
-- topic list is discovered by scanning `topic:*:items`
-- topic title is read from stored `surl:<topic>`
-
-### Lookup one item
-
-Request body:
-
-```json
-{
-  "path": "note"
-}
-```
-
-### Lookup one topic
-
-Request body:
-
-```json
-{
-  "path": "anime",
-  "type": "topic"
-}
-```
-
-or:
-
-```json
-{
-  "path": "anime",
-  "convert": "topic"
-}
-```
-
-Example response:
-
-```json
-{
-  "surl": "http://host/anime",
-  "path": "anime",
-  "type": "topic",
-  "title": "anime",
-  "created": "2022-10-11T01:11:01Z",
-  "ttl": null,
-  "content": "2"
-}
-```
-
-## `GET /<path>`
-
-Public route.
-
-Behavior by stored type:
-
-- `url`
-  - `302 Found` redirect
-- `text`
-  - plain text
-- `html`
-  - rendered HTML
-- `file`
-  - streamed from S3
-- `topic`
-  - topic home HTML
-
-Reserved built-in asset route:
-
-- `/asset/...` is not a normal public item path
-- direct cross-site access returns `403 forbidden`
-- `GET` and `HEAD` are allowed only for same-origin requests identified by `Referer`, `Origin`, or `Sec-Fetch-Site`
-- other methods return `405 Method Not Allowed`
-
-Cache headers:
-
-- public `topic` responses set:
-  - `Cache-Control: public, max-age=600, s-maxage=600`
-- public `text`, `html`, `url`, `file` responses set:
-  - `Cache-Control: public, max-age=86400, s-maxage=86400`
-- authenticated JSON responses do not set public cache headers
-
----
-
-## Topic Rendering Rules
-
-Topic home is generated from `topic:<topic>:items`.
-
-Ordering rules:
-
-- topic members prefer stored `created` descending, newest first
-- if member `created` is missing or invalid, rendering falls back to the member zset score
-- rendered date text uses the resolved time after this fallback, formatted in `Asia/Shanghai`
-
-Source Markdown shape:
-
-```md
-<div style="font-size: 1.3em; font-weight: bold"><Topic Title></div>
-
-<span style="color: #666;">Home</span>
-
-- [<title>](/<topic>/<path>) <mark> YYYY-MM-DD
-```
-
-Type marks:
-
-- `url` -> `↗`
-- `text` -> `☰`
-- `file` -> `◫`
-- `html` -> no mark
-
-Title rules:
-
-- use stored `title` when present
-- otherwise use path without topic prefix
-- topic page heading capitalizes the first rune of the display title
-
-Markdown conversion rules:
-
-- all `md2html` content writes full HTML
-- generated HTML `<title>` uses stored `title`
-- generated HTML references built-in `/asset/...` resources except for the KaTeX stylesheet used by display math
-- topic Markdown content also gets a top backlink:
-  - `[**Home**](/<topic>)`
-  - when the item itself has a title, the header also appends ` / <title>`
-
----
-
-## Redis Storage
-
-This section is the source of truth for reimplementation.
-
-## Main content keys
-
-### Regular item
-
-- key: `surl:<path>`
-- value: stored content JSON
-
-Examples:
-
-- `surl:note`
-- `surl:docs/intro`
-
-### Topic home
-
-- key: `surl:<topic>`
-- value: stored content JSON with `type=topic`
-
-Examples:
-
-- `surl:anime`
-- `surl:blog/2026`
-
-### Topic member
-
-- key: `surl:<topic>/<relative-path>`
-- value: stored content JSON
-
-Examples:
-
-- `surl:anime/castle-notes`
-- `surl:blog/2026/post-1`
-
-## Topic member index
-
-- key: `topic:<topic>:items`
-- Redis type: `zset`
-
-Semantics:
-
-- member: topic-relative path
-- score: last updated Unix timestamp in seconds
-- used as topic render fallback when stored `created` is missing or invalid
-
-Example:
-
-- key: `topic:anime:items`
-- member: `castle-notes`
-- score: `1797984000`
-
-### Empty topic placeholder
-
-Empty topics still create a `zset`.
-
-Implementation detail:
-
-- member: `__topic_placeholder__`
-- score: `0`
-
-Purpose:
-
-- keeps the topic zset key present even when the topic is empty
-
-Rules:
-
-- topic count ignores the placeholder
-- topic rendering ignores the placeholder
-- topic list and topic lookup do not expose the placeholder
-
-## File cache keys
-
-- `cache:file:<path>`
-- `cache:filemeta:<path>`
-
-Rules:
-
-- only used for stored `file` items
-- only used for small file reads
-- cache TTL is `1 hour`
-- cache is cleared on overwrite and delete
-
-Important boundary:
-
-- topic count and topic index are not actively repaired on TTL expiration
-- expired topic items may leave stale members in `topic:<topic>:items`
-- `PUT /` with `type=topic` repairs stale members and refreshes count/index
-
----
-
-## Export Mode
-
-Header:
-
-```text
+```http
 x-export: true
 ```
 
-Supported on:
+可用于 create/update/delete/lookup/list。
 
-- create
-- update
-- delete
-- lookup
-- list
+效果：
 
-Behavior:
-
-- regular items:
-  - `content` returns full content instead of preview
-- topics:
-  - current implementation still returns member count string in `content`
+- 普通内容：`content` 返回完整原文（而不是预览）
+- Topic：`content` 仍是成员数量字符串
 
 ---
 
-## Common Error Codes
+## 9. Date & Time
 
-- `unauthorized`
-- `invalid_request`
-- `conflict`
-- `not_found`
-- `payload_too_large`
-- `internal`
-- `s3_not_configured`
+`created` 支持多种输入格式（如 RFC3339、`2006-01-02` 等）。
+
+服务端会统一存成 UTC RFC3339。
+
+---
+
+## 10. Quick Start Snippets
+
+```bash
+export POST_BASE_URL="http://localhost:3011"
+export POST_TOKEN="your-secret-key"
+```
+
+创建文本：
+
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"hello","url":"Hello","type":"text"}'
+```
+
+读取文本：
+
+```bash
+curl "$POST_BASE_URL/hello"
+```
