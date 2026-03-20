@@ -2,45 +2,45 @@
 
 # Post-go
 
-一个轻量的「文本 / 链接 / 文件」分享服务。你可以把它当成自托管的临时剪贴板和短链接工具：
+A lightweight service for sharing **text, links, and files**. Think of it as a self-hosted temporary clipboard plus short-link tool:
 
-- 发一段文本，得到一个短地址
-- 发一个 URL，访问短地址自动跳转
-- 上传文件，得到可下载地址
-- 用 Topic（主题）把多条内容组织在一个页面里
-
----
-
-## 适合谁
-
-- 想自托管分享服务的个人或小团队
-- 想要极简 API，而不是复杂后台系统
-- 想统一管理「文本、链接、文件」三类分享内容
+- Post text and get a short URL
+- Post a URL and auto-redirect on access
+- Upload files and get downloadable links
+- Group multiple items under a Topic page
 
 ---
 
-## 你会得到什么
+## Who is this for?
 
-- **统一地址模型**：所有内容都对应 `/<path>`
-- **公开读取 + 写入鉴权**：任何人可访问公开链接，写操作需要 Token
-- **支持过期时间（TTL）**：可设置分钟级有效期
-- **Topic 聚合页**：把同一主题下的内容自动整理为列表页
+- Individuals or small teams who want a self-hosted sharing service
+- Users who prefer a minimal API over a complex admin system
+- Teams that want one model for text, links, and file sharing
 
 ---
 
-## 快速开始
+## What you get
 
-### 1) 准备环境
+- **Unified path model**: every item is available at `/<path>`
+- **Public read + authenticated write**: anyone can open public links; writes require a token
+- **TTL support**: optional expiration in minutes
+- **Topic aggregation page**: automatically list content under a topic
 
-必需：
+---
+
+## Quick Start
+
+### 1) Requirements
+
+Required:
 
 - Redis
-- `SECRET_KEY`（写接口鉴权）
+- `SECRET_KEY` (write API authentication)
 - `LINKS_REDIS_URL`
 
-如果你需要文件上传，还需要配置 S3 兼容对象存储。
+If you need file uploads, configure S3-compatible object storage as well.
 
-### 2) 本地启动
+### 2) Run locally
 
 ```bash
 cp .env.example .env.local
@@ -49,20 +49,20 @@ make
 ./post-server
 ```
 
-默认启动后即可通过 `http://localhost:3011`（或你配置的端口）访问。
+By default, the service is available at `http://localhost:3000` (unless you set `PORT`).
 
 ---
 
-## 最常见用法
+## Common Usage
 
-先设置变量：
+Set environment variables first:
 
 ```bash
-export POST_BASE_URL="http://localhost:3011"
+export POST_BASE_URL="http://localhost:3000"
 export POST_TOKEN="your-secret-key"
 ```
 
-### 新建一条文本
+### Create a text item
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -75,11 +75,11 @@ curl -X POST "$POST_BASE_URL/" \
   }'
 ```
 
-然后直接打开：
+Then open:
 
-- `http://localhost:3011/hello`
+- `http://localhost:3000/hello`
 
-### 新建一个短链接
+### Create a short link
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -92,9 +92,9 @@ curl -X POST "$POST_BASE_URL/" \
   }'
 ```
 
-访问 `/openai` 会 302 跳转到目标站点。
+Accessing `/openai` returns a `302` redirect to the target URL.
 
-### 上传文件
+### Upload a file
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -105,23 +105,23 @@ curl -X POST "$POST_BASE_URL/" \
 
 ---
 
-## 鉴权说明
+## Authentication
 
-写操作需要：
+Write operations require:
 
 ```http
 Authorization: Bearer <SECRET_KEY>
 ```
 
-通常需要鉴权的方法：`POST /`、`PUT /`、`DELETE /`、`GET /`（管理查询）。
+Operations that typically require authentication: `POST /`, `PUT /`, `DELETE /`, `GET /` (management query).
 
-公开访问内容使用 `GET /<path>`，不需要鉴权。
+Public content access uses `GET /<path>` and does not require authentication.
 
 ---
 
-## API 文档
+## API documentation
 
-详细接口（字段、错误码、完整示例）请看：
+For full endpoint details (fields, error codes, complete examples), see:
 
 - [API.md](./API.md)
 

@@ -1,6 +1,6 @@
 # Post-go REST API
 
-> 面向 API 使用者的参考文档（调用方式、字段、示例、错误处理）。
+> Reference for API consumers: request patterns, fields, examples, and error handling.
 
 ## 1. Base URL
 
@@ -8,80 +8,80 @@
 http://host:port
 ```
 
-例如：
+Example:
 
 ```text
-http://localhost:3011
+http://localhost:3000
 ```
 
 ---
 
 ## 2. Authentication
 
-写操作与管理查询需要 Bearer Token：
+Write operations and management queries require a Bearer token:
 
 ```http
 Authorization: Bearer <SECRET_KEY>
 ```
 
-需要鉴权的典型请求：
+Common authenticated operations:
 
 - `POST /`
 - `PUT /`
 - `DELETE /`
-- `GET /`（管理接口）
+- `GET /` (management API)
 
-公开访问内容用 `GET /{path}`，无需鉴权。
+Public reads use `GET /{path}` and do not require authentication.
 
 ---
 
-## 3. Content Types（内容类型）
+## 3. Content Types
 
-创建/更新时通过 `type` 指定：
+Set `type` when creating/updating content:
 
-- `text`：纯文本
-- `url`：链接（公开访问时 302 跳转）
-- `html`：HTML 内容
-- `file`：文件（multipart 上传）
-- `topic`：主题页（用于组织成员内容）
-- `md2html`：写入时将 Markdown 转为 `html`
-- `qrcode`：写入时将输入转为文本二维码（存储类型为 `text`）
+- `text`: plain text
+- `url`: URL link (public reads return `302` redirect)
+- `html`: HTML content
+- `file`: file upload (`multipart/form-data`)
+- `topic`: topic page for grouping members
+- `md2html`: convert Markdown to `html` on write
+- `qrcode`: convert input into a text QR code (stored as `text`)
 
-`convert` 可作为 `type` 的别名。
+`convert` can be used as an alias for `type`.
 
 ---
 
 ## 4. Common Request Fields
 
-JSON 请求常见字段：
+Common JSON fields:
 
-| 字段 | 类型 | 必填 | 说明 |
+| Field | Type | Required | Description |
 |---|---|---:|---|
-| `url` | string | 是* | 内容本体（文本、链接、Markdown 等） |
-| `path` | string | 否 | 短路径；省略时服务端可自动生成 |
-| `title` | string | 否 | 展示标题 |
-| `created` | string | 否 | 创建时间 |
-| `type` | string | 否 | 内容类型 |
-| `convert` | string | 否 | `type` 别名 |
-| `ttl` | integer | 否 | 过期时间（分钟） |
-| `topic` | string | 否 | 指定归属主题 |
+| `url` | string | Yes* | Main payload (text, link, markdown, etc.) |
+| `path` | string | No | Short path; server may auto-generate if omitted |
+| `title` | string | No | Display title |
+| `created` | string | No | Creation timestamp |
+| `type` | string | No | Content type |
+| `convert` | string | No | Alias of `type` |
+| `ttl` | integer | No | Expiration in minutes |
+| `topic` | string | No | Topic assignment |
 
-> `url` 在 `type=topic` 时不需要。
+> `url` is not required when `type=topic`.
 
-### Path 规则
+### Path Rules
 
-- 最大长度：99
-- 允许字符：`a-z A-Z 0-9 - _ . / ( )`
-- 自动去除首尾多余 `/`
-- `path` 与 `path/` 视为同一路径
-- `asset/...` 为保留路径，不能用于业务内容
+- Max length: 99
+- Allowed characters: `a-z A-Z 0-9 - _ . / ( )`
+- Leading/trailing `/` is trimmed
+- `path` and `path/` are treated as the same path
+- `asset/...` is reserved and cannot be used for user content
 
-### TTL 规则
+### TTL Rules
 
-- 单位：分钟
-- 范围：`0 ~ 525600`
-- `0` 表示不过期
-- `topic` 本身不支持 TTL
+- Unit: minutes
+- Range: `0 ~ 525600`
+- `0` means no expiration
+- `topic` itself does not support TTL
 
 ---
 
@@ -101,15 +101,15 @@ JSON 请求常见字段：
 }
 ```
 
-字段说明：
+Field notes:
 
-- `surl`：完整访问地址
-- `path`：短路径
-- `type`：内容类型
-- `title`：标题（总会返回，缺省为 `""`）
-- `created`：时间（缺失/异常时可能返回 `"illegal"`）
-- `ttl`：剩余 TTL（无过期为 `null`）
-- `content`：默认是预览内容
+- `surl`: full public URL
+- `path`: short path
+- `type`: content type
+- `title`: title (always present; defaults to `""`)
+- `created`: timestamp (`"illegal"` may appear if missing/invalid in storage)
+- `ttl`: remaining TTL (`null` when non-expiring)
+- `content`: preview by default
 
 ### 5.2 Error Object
 
@@ -122,7 +122,7 @@ JSON 请求常见字段：
 }
 ```
 
-常见 `code`：
+Common `code` values:
 
 - `unauthorized`
 - `invalid_request`
@@ -138,9 +138,9 @@ JSON 请求常见字段：
 
 ## 6.1 Create: `POST /`
 
-创建普通内容、Topic，或上传文件。
+Create regular content, Topic pages, or upload files.
 
-### 6.1.1 创建文本（JSON）
+### 6.1.1 Create text (JSON)
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -155,7 +155,7 @@ curl -X POST "$POST_BASE_URL/" \
   }'
 ```
 
-### 6.1.2 创建短链接（JSON）
+### 6.1.2 Create short link (JSON)
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -168,7 +168,7 @@ curl -X POST "$POST_BASE_URL/" \
   }'
 ```
 
-### 6.1.3 创建 Topic
+### 6.1.3 Create Topic
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -181,7 +181,7 @@ curl -X POST "$POST_BASE_URL/" \
   }'
 ```
 
-### 6.1.4 上传文件（multipart）
+### 6.1.4 Upload file (multipart)
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -191,16 +191,16 @@ curl -X POST "$POST_BASE_URL/" \
   -F "file=@./manual.pdf"
 ```
 
-说明：
+Notes:
 
-- 需要配置 S3 兼容存储
-- 如果 `path` 无扩展名，服务端会补上上传文件扩展名
+- Requires configured S3-compatible storage
+- If `path` has no extension, the server appends the uploaded file extension
 
 ---
 
 ## 6.2 Upsert: `PUT /`
 
-按 `path` 更新；不存在时创建。
+Update by `path`; create if not found.
 
 ```bash
 curl -X PUT "$POST_BASE_URL/" \
@@ -213,13 +213,13 @@ curl -X PUT "$POST_BASE_URL/" \
   }'
 ```
 
-行为：
+Behavior:
 
-- 已存在：更新，返回 `200`
-- 不存在：创建，返回 `201`
-- 可能返回 `overwritten` 字段（旧内容预览或导出内容）
+- Exists: update and return `200`
+- Missing: create and return `201`
+- May include `overwritten` (preview or export payload of previous content)
 
-### Topic 重建
+### Topic rebuild
 
 ```bash
 curl -X PUT "$POST_BASE_URL/" \
@@ -232,13 +232,13 @@ curl -X PUT "$POST_BASE_URL/" \
   }'
 ```
 
-用于刷新 Topic 首页与成员索引。
+Use this to refresh Topic home and member indexes.
 
 ---
 
 ## 6.3 Delete: `DELETE /`
 
-### 删除普通内容
+### Delete regular content
 
 ```bash
 curl -X DELETE "$POST_BASE_URL/" \
@@ -247,7 +247,7 @@ curl -X DELETE "$POST_BASE_URL/" \
   -d '{"path": "note"}'
 ```
 
-### 删除 Topic
+### Delete Topic
 
 ```bash
 curl -X DELETE "$POST_BASE_URL/" \
@@ -259,22 +259,22 @@ curl -X DELETE "$POST_BASE_URL/" \
   }'
 ```
 
-> 删除 Topic 不会删除其子路径下的内容对象本身。
+> Deleting a Topic does not delete the underlying items under that path prefix.
 
 ---
 
 ## 6.4 Management Query: `GET /`
 
-用于鉴权后的后台查询。
+Authenticated management lookup APIs.
 
-### 列出全部内容
+### List all content
 
 ```bash
 curl -X GET "$POST_BASE_URL/" \
   -H "Authorization: Bearer $POST_TOKEN"
 ```
 
-### 查询单个 path
+### Lookup single path
 
 ```bash
 curl -X GET "$POST_BASE_URL/" \
@@ -283,7 +283,7 @@ curl -X GET "$POST_BASE_URL/" \
   -d '{"path": "note"}'
 ```
 
-### 查询 Topic
+### Lookup Topic
 
 ```bash
 curl -X GET "$POST_BASE_URL/" \
@@ -299,17 +299,15 @@ curl -X GET "$POST_BASE_URL/" \
 
 ## 6.5 Public Read: `GET /{path}`
 
-公开访问路径。
+Public access path behavior by `type`:
 
-不同 `type` 的返回行为：
+- `url`: `302 Found` redirect
+- `text`: plain text response
+- `html`: HTML response
+- `file`: file stream response
+- `topic`: topic HTML page
 
-- `url`：`302 Found` 跳转
-- `text`：返回纯文本
-- `html`：返回 HTML
-- `file`：返回文件流
-- `topic`：返回主题页 HTML
-
-示例：
+Example:
 
 ```bash
 curl -i "$POST_BASE_URL/note"
@@ -317,11 +315,11 @@ curl -i "$POST_BASE_URL/note"
 
 ---
 
-## 7. Topic 用法
+## 7. Topic Usage
 
-有两种把内容写入 Topic 的方式：
+Two ways to write content into a Topic:
 
-### 方式 A：显式指定 `topic`
+### Method A: Explicit `topic`
 
 ```json
 {
@@ -332,7 +330,7 @@ curl -i "$POST_BASE_URL/note"
 }
 ```
 
-### 方式 B：直接使用带前缀路径
+### Method B: Prefix path directly
 
 ```json
 {
@@ -342,43 +340,43 @@ curl -i "$POST_BASE_URL/note"
 }
 ```
 
-如果同名前缀存在多个 Topic，系统会匹配**最长前缀**。
+If multiple Topics match by prefix, the **longest prefix** wins.
 
 ---
 
 ## 8. Export Mode
 
-在请求头加：
+Add header:
 
 ```http
 x-export: true
 ```
 
-可用于 create/update/delete/lookup/list。
+Available for create/update/delete/lookup/list.
 
-效果：
+Effect:
 
-- 普通内容：`content` 返回完整原文（而不是预览）
-- Topic：`content` 仍是成员数量字符串
+- Regular content: `content` returns full raw content (not preview)
+- Topic: `content` remains the member count string
 
 ---
 
 ## 9. Date & Time
 
-`created` 支持多种输入格式（如 RFC3339、`2006-01-02` 等）。
+`created` accepts multiple input formats (for example RFC3339 or `2006-01-02`).
 
-服务端会统一存成 UTC RFC3339。
+The server normalizes and stores it as UTC RFC3339.
 
 ---
 
 ## 10. Quick Start Snippets
 
 ```bash
-export POST_BASE_URL="http://localhost:3011"
+export POST_BASE_URL="http://localhost:3000"
 export POST_TOKEN="your-secret-key"
 ```
 
-创建文本：
+Create text:
 
 ```bash
 curl -X POST "$POST_BASE_URL/" \
@@ -387,7 +385,7 @@ curl -X POST "$POST_BASE_URL/" \
   -d '{"path":"hello","url":"Hello","type":"text"}'
 ```
 
-读取文本：
+Read text:
 
 ```bash
 curl "$POST_BASE_URL/hello"
