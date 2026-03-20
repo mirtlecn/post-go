@@ -1,64 +1,134 @@
 [Vercel / Node.js / Web GUI](https://github.com/mirtlecn/post) | [CLI client](https://github.com/mirtlecn/post-cli) | [Skills for AI Agents](https://github.com/mirtlecn/post-cli/tree/master/skills)
 
-# Post-go — Lightweight File, Text & URL Sharing API
+# Post-go
 
-This is a Go rewrite of the Post service for high performance, low footprint, and easy deployment.
+A lightweight service for sharing **text, links, and files**. Think of it as a self-hosted temporary clipboard plus short-link tool:
 
-## Running
+- Post text and get a short URL
+- Post a URL and auto-redirect on access
+- Upload files and get downloadable links
+- Group multiple items under a Topic page
 
-Prerequisites:
-- Go (Test on Go 1.26)
+---
+
+## Who is this for?
+
+- Individuals or small teams who want a self-hosted sharing service
+- Users who prefer a minimal API over a complex admin system
+- Teams that want one model for text, links, and file sharing
+
+---
+
+## What you get
+
+- **Unified path model**: every item is available at `/<path>`
+- **Public read + authenticated write**: anyone can open public links; writes require a token
+- **TTL support**: optional expiration in minutes
+- **Topic aggregation page**: automatically list content under a topic
+
+---
+
+## Quick Start
+
+### 1) Requirements
+
+Required:
+
 - Redis
-- S3-compatible storage (required for file uploads)
+- `SECRET_KEY` (write API authentication)
+- `LINKS_REDIS_URL`
+
+If you need file uploads, configure S3-compatible object storage as well.
+
+### 2) Run locally
 
 ```bash
-go mod tidy
-cp .env.example .env.local # The server loads env from `.env.local` first, then `.env`.
+cp .env.example .env.local
 make assets-sync
 make
 ./post-server
 ```
 
-Build commands:
-
-```bash
-make assets-sync # sync embedded assets
-make             # remove old ./post-server and rebuild
-make test        # run go test ./...
-make smoke       # run ./scripts/smoke_all.sh
-make run         # best-effort asset refresh, then go run ./cmd/post-server
-./scripts/bump_version.sh 1.3.5 # update Go version, create commit, and create git tag
-```
-
-CI:
-- GitHub Actions runs `go test ./...`
-- GitHub Actions runs a multi-platform snapshot build through GoReleaser on push and pull request
-- build outputs are uploaded from `dist/` as a GitHub Actions artifact
-
-Required env:
-`LINKS_REDIS_URL`, `SECRET_KEY`
-
-Optional env:
-`MAX_CONTENT_SIZE_KB`, `MAX_FILE_SIZE_MB`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME`, `S3_REGION`
-
-
-## API
-
-Write operations require `Authorization: Bearer <SECRET_KEY>`.
-
-Suggested shell variables:
-
-```bash
-export POST_BASE_URL="https://example.com"
-export POST_TOKEN="your-secret-key"
-```
-
-For detailed API documentation, please refer to the [API Reference](./API.md).
+By default, the service is available at `http://localhost:3000` (unless you set `PORT`).
 
 ---
 
-## Credits
+## Common Usage
 
-MIT Licence
+Set environment variables first:
+
+```bash
+export POST_BASE_URL="http://localhost:3000"
+export POST_TOKEN="your-secret-key"
+```
+
+### Create a text item
+
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "hello",
+    "url": "Hello Post-go",
+    "type": "text"
+  }'
+```
+
+Then open:
+
+- `http://localhost:3000/hello`
+
+### Create a short link
+
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "openai",
+    "url": "https://openai.com",
+    "type": "url"
+  }'
+```
+
+Accessing `/openai` returns a `302` redirect to the target URL.
+
+### Upload a file
+
+```bash
+curl -X POST "$POST_BASE_URL/" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "path=manual" \
+  -F "file=@./manual.pdf"
+```
+
+---
+
+## Authentication
+
+Write operations require:
+
+```http
+Authorization: Bearer <SECRET_KEY>
+```
+
+Operations that typically require authentication: `POST /`, `PUT /`, `DELETE /`, `GET /` (management query).
+
+Public content access uses `GET /<path>` and does not require authentication.
+
+---
+
+## API documentation
+
+For full endpoint details (fields, error codes, complete examples), see:
+
+- [API.md](./API.md)
+
+---
+
+## License
+
+MIT
 
 © Mirtle together with OpenAI Codex
