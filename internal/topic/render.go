@@ -99,7 +99,7 @@ func typeMark(itemType string) string {
 	switch itemType {
 	case "url":
 		return "↗"
-	case "text":
+	case "text", "qrcode":
 		return "☰"
 	case "file":
 		return "◫"

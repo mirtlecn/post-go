@@ -186,8 +186,8 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
 		return
 	}
-	if typeInfo.InputType != "" && typeInfo.InputType != "url" && typeInfo.InputType != "text" && typeInfo.InputType != "html" && typeInfo.InputType != "md2html" && typeInfo.InputType != "qrcode" {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "`type` must be one of: url, text, html, md2html, qrcode, topic", nil, nil)
+	if typeInfo.InputType != "" && typeInfo.InputType != "url" && typeInfo.InputType != "text" && typeInfo.InputType != "html" && typeInfo.InputType != "md" && typeInfo.InputType != "md2html" && typeInfo.InputType != "qrcode" {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", "`type` must be one of: url, text, html, md, md2html, qrcode, topic", nil, nil)
 		return
 	}
 	if resolvedPath.ExistingTopic && pathVal == resolvedPath.TopicName {
@@ -201,35 +201,13 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	switch typeInfo.InputType {
-	case "md2html":
-		options := convert.MarkdownOptions{
-			PageTitle: titleVal,
-		}
-		if resolvedPath.IsTopicItem {
-			options.TopicBackLink = "/" + resolvedPath.TopicName
-			topicStoredValue, err := h.getTopicStoredValue(ctx, rdb, resolvedPath.TopicName)
-			if err != nil {
-				requestLogger{}.Errorf("topic get failed: %v", err)
-				utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-				return
-			}
-			options.TopicBackLabel = topicDisplayTitle(resolvedPath.TopicName, topicStoredValue)
-		}
-		html, err := convert.ConvertMarkdownToHTMLWithOptions(inputContent, options)
-		if err != nil {
-			requestLogger{}.Warnf("md2html failed: %v", err)
-			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
-			return
-		}
-		inputContent = html
 	case "qrcode":
-		qr, err := convert.ConvertToQRCode(inputContent)
+		_, err := convert.ConvertToQRCode(inputContent)
 		if err != nil {
 			requestLogger{}.Warnf("qrcode failed: %v", err)
 			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 			return
 		}
-		inputContent = qr
 	}
 
 	maxBytes := h.Cfg.MaxContentKB * 1024

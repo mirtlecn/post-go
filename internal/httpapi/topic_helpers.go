@@ -40,9 +40,7 @@ func normalizeTypeAlias(body map[string]any) (requestTypeInfo, error) {
 	storeType := inputType
 	switch inputType {
 	case "md2html":
-		storeType = "html"
-	case "qrcode":
-		storeType = "text"
+		storeType = "md"
 	}
 	return requestTypeInfo{InputType: inputType, StoreType: storeType}, nil
 }

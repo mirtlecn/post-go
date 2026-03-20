@@ -41,13 +41,32 @@ Set `type` when creating/updating content:
 
 - `text`: plain text
 - `url`: URL link (public reads return `302` redirect)
+- `md`: stored Markdown; public reads render HTML
 - `html`: HTML content
 - `file`: file upload (`multipart/form-data`)
 - `topic`: topic page for grouping members
-- `md2html`: convert Markdown to `html` on write
-- `qrcode`: convert input into a text QR code (stored as `text`)
+- `md2html`: write-time alias of Markdown; stored as `md`
+- `qrcode`: stored raw input; public reads render a text QR code
 
 `convert` can be used as an alias for `type`.
+
+Stored `type` values:
+
+- `url`
+- `text`
+- `md`
+- `html`
+- `file`
+- `qrcode`
+- `topic`
+
+Normalization rules:
+
+- if both `type` and `convert` are provided, they must match
+- if neither is provided:
+  - URL-like input becomes `url`
+  - other input becomes `text`
+- stored `created` is normalized to UTC `RFC3339`
 
 ---
 
@@ -110,6 +129,13 @@ Field notes:
 - `created`: timestamp (`"illegal"` may appear if missing/invalid in storage)
 - `ttl`: remaining TTL (`null` when non-expiring)
 - `content`: preview by default
+
+Preview rules:
+
+- `text`, `html`, `md`, and `qrcode` return the first `15` characters, then `...` when truncated
+- `url` and `file` return the full stored value
+- `topic` returns the current member count as a string
+- setting header `x-export: true` returns full stored content for non-topic items
 
 ### 5.2 Error Object
 
@@ -303,7 +329,9 @@ Public access path behavior by `type`:
 
 - `url`: `302 Found` redirect
 - `text`: plain text response
+- `md`: render stored Markdown to HTML
 - `html`: HTML response
+- `qrcode`: render stored input to text QR code
 - `file`: file stream response
 - `topic`: topic HTML page
 

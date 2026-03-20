@@ -16,7 +16,7 @@ func TestBuildIndexMarkdownSortsByUpdatedAtAsFlatList(t *testing.T) {
 		},
 		{
 			Path:      "howl-visual",
-			Type:      "html",
+			Type:      "md",
 			Title:     "Howl Visual Draft",
 			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
 		},
@@ -153,5 +153,22 @@ func TestBuildIndexMarkdownDisplaysDateInAsiaShanghai(t *testing.T) {
 
 	if !strings.Contains(output, "[Castle in the Sky Notes](</anime/castle-notes>) ☰ 2022-10-11") {
 		t.Fatalf("expected topic index date to use Asia/Shanghai, got %q", output)
+	}
+}
+
+func TestBuildIndexMarkdownUsesTextMarkForQRCode(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "share",
+			Type:      "qrcode",
+			Title:     "Share Code",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	if !strings.Contains(output, "[Share Code](</anime/share>) ☰ 2026-12-23") {
+		t.Fatalf("expected qrcode entry to use text mark, got %q", output)
 	}
 }

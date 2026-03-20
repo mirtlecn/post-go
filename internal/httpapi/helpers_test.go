@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestResponseContentReturnsRawContentForExport(t *testing.T) {
+	if got := responseContent("md", "# Hello", true); got != "# Hello" {
+		t.Fatalf("expected raw markdown export, got %q", got)
+	}
+	if got := responseContent("qrcode", "https://example.com", true); got != "https://example.com" {
+		t.Fatalf("expected raw qrcode export, got %q", got)
+	}
+}
+
+func TestResponseContentPreviewsMarkdownAndQRCodeAsRawText(t *testing.T) {
+	if got := responseContent("md", "# Hello from Markdown", false); got != "# Hello from Ma..." {
+		t.Fatalf("expected markdown preview, got %q", got)
+	}
+	if got := responseContent("qrcode", "https://example.com/qr", false); got != "https://example..." {
+		t.Fatalf("expected qrcode preview, got %q", got)
+	}
+}
+
 func TestParseTTLValueHandlesSupportedForms(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -117,16 +135,16 @@ func TestNormalizeTypeAliasSupportsAliasAndMappings(t *testing.T) {
 			storeType: "text",
 		},
 		{
-			name:      "md2html maps to html",
+			name:      "md2html maps to md",
 			body:      map[string]any{"type": "md2html"},
 			inputType: "md2html",
-			storeType: "html",
+			storeType: "md",
 		},
 		{
-			name:      "qrcode maps to text",
+			name:      "qrcode keeps qrcode type",
 			body:      map[string]any{"convert": "qrcode"},
 			inputType: "qrcode",
-			storeType: "text",
+			storeType: "qrcode",
 		},
 	}
 

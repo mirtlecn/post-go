@@ -57,7 +57,7 @@ pass "redis topic init"
 api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC"'","path":"entry","url":"# Entry\n\nHello","type":"md2html","title":"Entry Title"}'
 assert_status 201 "create topic item"
 ITEM_VALUE="$(redis_get "surl:$TOPIC/entry")"
-if ! jq -e '.type == "html" and .title == "Entry Title" and (.content | contains("<title>Entry Title</title>"))' >/dev/null <<<"$ITEM_VALUE"; then
+if ! jq -e '.type == "md" and .title == "Entry Title" and .content == "# Entry\n\nHello"' >/dev/null <<<"$ITEM_VALUE"; then
   fail "redis topic item json" "value: $ITEM_VALUE"
 fi
 if [[ "$(redis_zcard "topic:$TOPIC:items")" != "2" ]]; then
@@ -79,7 +79,7 @@ sleep 1
 api_json PUT "$POST_BASE_URL/" '{"topic":"'"$TOPIC"'","path":"entry","url":"# Entry\n\nUpdated","type":"md2html","title":"Entry Title 2"}'
 assert_status 200 "update topic item"
 ITEM_VALUE="$(redis_get "surl:$TOPIC/entry")"
-if ! jq -e '.type == "html" and .title == "Entry Title 2" and (.content | contains("Updated")) and (.content | contains("<title>Entry Title 2</title>"))' >/dev/null <<<"$ITEM_VALUE"; then
+if ! jq -e '.type == "md" and .title == "Entry Title 2" and .content == "# Entry\n\nUpdated"' >/dev/null <<<"$ITEM_VALUE"; then
   fail "redis topic item update json" "value: $ITEM_VALUE"
 fi
 SCORE_AFTER="$(redis_zscore "topic:$TOPIC:items" "entry")"

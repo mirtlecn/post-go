@@ -78,7 +78,7 @@ pass "mismatched type convert alias"
 
 api_json POST "$POST_BASE_URL/" '{"url":"# Title\n\nHello from Markdown","path":"'"$SMOKE_PREFIX"'-md","convert":"md2html","title":"Markdown Title"}'
 assert_status 201 "create md2html"
-assert_jq '.type == "html"' "create md2html type"
+assert_jq '.type == "md"' "create md2html type"
 assert_jq '.title == "Markdown Title"' "create md2html title"
 pass "create md2html"
 
@@ -101,7 +101,7 @@ pass "public html read"
 
 api_json POST "$POST_BASE_URL/" '{"url":"https://example.com/qr","path":"'"$SMOKE_PREFIX"'-qr","convert":"qrcode"}'
 assert_status 201 "create qrcode"
-assert_jq '.type == "text"' "create qrcode type"
+assert_jq '.type == "qrcode"' "create qrcode type"
 assert_jq '.title == ""' "create qrcode empty title"
 pass "create qrcode"
 
@@ -164,11 +164,11 @@ assert_jq 'map(select(.path == "'"$SMOKE_PREFIX"'-text"))[0].created | type == "
 pass "list items"
 
 api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-md"}' yes x-export true
-assert_status 200 "lookup html export"
-assert_jq '.type == "html"' "lookup html export type"
-assert_jq '.content | contains("<title>Markdown Title</title>")' "lookup html export body"
-assert_jq '.title == "Markdown Title"' "lookup html export title"
-pass "lookup html export"
+assert_status 200 "lookup markdown export"
+assert_jq '.type == "md"' "lookup markdown export type"
+assert_jq '.content == "# Title\n\nHello from Markdown"' "lookup markdown export body"
+assert_jq '.title == "Markdown Title"' "lookup markdown export title"
+pass "lookup markdown export"
 
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-missing"}'
 assert_status 404 "delete missing"

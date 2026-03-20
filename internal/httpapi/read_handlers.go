@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"post-go/internal/convert"
 	"post-go/internal/storage"
 	"post-go/internal/utils"
 )
@@ -203,6 +204,24 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 	case "html":
 		utils.HTML(w, http.StatusOK, storedValue.Content, true)
 		return
+	case "md":
+		html, err := h.renderStoredMarkdown(ctx, rdb, path, storedValue)
+		if err != nil {
+			requestLogger{}.Errorf("markdown render failed: %s (%v)", path, err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
+		utils.HTML(w, http.StatusOK, html, true)
+		return
+	case "qrcode":
+		qr, err := convert.ConvertToQRCode(storedValue.Content)
+		if err != nil {
+			requestLogger{}.Errorf("qrcode render failed: %s (%v)", path, err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
+		utils.Text(w, http.StatusOK, qr, true)
+		return
 	case "file":
 		h.serveFile(w, r, path, storedValue.Content)
 		return
@@ -210,6 +229,40 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		utils.Text(w, http.StatusOK, storedValue.Content, true)
 		return
 	}
+}
+
+func (h *Handler) renderStoredMarkdown(ctx context.Context, rdb redisStore, path string, storedValue storage.StoredValue) (string, error) {
+	options := convert.MarkdownOptions{
+		PageTitle: storedValue.Title,
+	}
+	topicName, isTopicItem, err := h.topicNameForPath(ctx, rdb, path)
+	if err != nil {
+		return "", err
+	}
+	if isTopicItem {
+		options.TopicBackLink = "/" + topicName
+		topicStoredValue, err := h.getTopicStoredValue(ctx, rdb, topicName)
+		if err != nil {
+			return "", err
+		}
+		options.TopicBackLabel = topicDisplayTitle(topicName, topicStoredValue)
+	}
+	return convert.ConvertMarkdownToHTMLWithOptions(storedValue.Content, options)
+}
+
+func (h *Handler) topicNameForPath(ctx context.Context, rdb redisStore, path string) (string, bool, error) {
+	parts := strings.Split(path, "/")
+	for prefixLength := len(parts) - 1; prefixLength >= 1; prefixLength-- {
+		topicName := strings.Join(parts[:prefixLength], "/")
+		exists, err := h.topicExists(ctx, rdb, topicName)
+		if err != nil {
+			return "", false, err
+		}
+		if exists {
+			return topicName, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {

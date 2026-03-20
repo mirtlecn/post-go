@@ -1025,7 +1025,7 @@ func TestHandleListReturnsIllegalCreatedWhenStoredValueMissingCreated(t *testing
 	}
 }
 
-func TestHandleJSONCreateUsesStoredTopicTitleForMarkdownBacklink(t *testing.T) {
+func TestHandleJSONCreateStoresRawTopicMarkdown(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
 			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
@@ -1043,11 +1043,11 @@ func TestHandleJSONCreateUsesStoredTopicTitleForMarkdownBacklink(t *testing.T) {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
 	stored := storage.ParseStoredValue(store.setValues[0])
-	if !strings.Contains(stored.Content, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>") {
-		t.Fatalf("expected markdown header to use stored topic title, got %q", stored.Content)
+	if stored.Type != "md" {
+		t.Fatalf("expected md type, got %q", stored.Type)
 	}
-	if !strings.Contains(stored.Content, `href="/anime"`) {
-		t.Fatalf("expected markdown backlink href to use topic path, got %q", stored.Content)
+	if stored.Content != "# Castle" {
+		t.Fatalf("expected raw markdown content, got %q", stored.Content)
 	}
 }
 
@@ -1409,7 +1409,7 @@ func TestHandleJSONCreateStoresTitleInJSONValue(t *testing.T) {
 	assertRFC3339Value(t, body.Created)
 }
 
-func TestHandleJSONCreateMD2HTMLUsesTitleForHTMLTitle(t *testing.T) {
+func TestHandleJSONCreateMD2HTMLStoresRawMarkdown(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)
 	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"# Hello","path":"note","type":"md2html","title":"Greeting"}`))
@@ -1422,11 +1422,102 @@ func TestHandleJSONCreateMD2HTMLUsesTitleForHTMLTitle(t *testing.T) {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
 	stored := storage.ParseStoredValue(store.lastSetValue)
-	if stored.Type != "html" {
-		t.Fatalf("expected stored html type, got %q", stored.Type)
+	if stored.Type != "md" {
+		t.Fatalf("expected stored md type, got %q", stored.Type)
 	}
-	if !strings.Contains(stored.Content, "<title>Greeting</title>") {
-		t.Fatalf("expected rendered html title, got %q", stored.Content)
+	if stored.Content != "# Hello" {
+		t.Fatalf("expected stored raw markdown, got %q", stored.Content)
+	}
+}
+
+func TestHandleJSONCreateQRCodeStoresRawContent(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"https://example.com/qr","path":"qr","type":"qrcode","title":"QR"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if stored.Type != "qrcode" {
+		t.Fatalf("expected stored qrcode type, got %q", stored.Type)
+	}
+	if stored.Content != "https://example.com/qr" {
+		t.Fatalf("expected stored raw qrcode content, got %q", stored.Content)
+	}
+}
+
+func TestServeHTTPRendersStoredMarkdown(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"md","content":"# Hello","title":"Greeting"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/note", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Cache-Control") != publicCacheControl {
+		t.Fatalf("expected default cache header %q, got %q", publicCacheControl, response.Header().Get("Cache-Control"))
+	}
+	if !strings.Contains(response.Body.String(), "<title>Greeting</title>") {
+		t.Fatalf("expected markdown page title, got %q", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "<h1 id=\"hello\">Hello</h1>") {
+		t.Fatalf("expected markdown body to render, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRendersStoredTopicMarkdownWithBacklink(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime/castle": {value: `{"type":"md","content":"# Castle","title":"Castle Notes"}`},
+			"surl:anime":        {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/anime/castle", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `href="/anime"`) {
+		t.Fatalf("expected topic backlink href, got %q", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "Anime Archive") {
+		t.Fatalf("expected topic backlink label, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRendersStoredQRCode(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:qr": {value: `{"type":"qrcode","content":"https://example.com/qr","title":"QR"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/qr", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if !strings.Contains(response.Body.String(), "Scan this QR code") {
+		t.Fatalf("expected qrcode text body, got %q", response.Body.String())
 	}
 }
 

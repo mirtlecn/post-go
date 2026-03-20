@@ -61,7 +61,7 @@ func main() {
 	markdown := topic.BuildIndexMarkdown("anime", "Anime", []topic.Item{
 		{
 			Path:      "howl-visual",
-			Type:      "html",
+			Type:      "md",
 			Title:     "Howl Visual Draft",
 			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
 		},
@@ -100,6 +100,17 @@ func main() {
 	}
 	mustContain("html no type mark", markdown, "[Howl Visual Draft](</anime/howl-visual>) 2026-12-23")
 	pass("html no type mark")
+
+	qrMarkdown := topic.BuildIndexMarkdown("anime", "Anime", []topic.Item{
+		{
+			Path:      "share",
+			Type:      "qrcode",
+			Title:     "Share Code",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	mustContain("qrcode type mark", qrMarkdown, "[Share Code](</anime/share>) ☰ 2026-12-23")
+	pass("qrcode type mark")
 
 	fallbackMarkdown := topic.BuildIndexMarkdown("anime", "anime", []topic.Item{
 		{
