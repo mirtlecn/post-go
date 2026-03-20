@@ -1501,6 +1501,32 @@ func TestServeHTTPRendersStoredTopicMarkdownWithBacklink(t *testing.T) {
 	}
 }
 
+func TestServeHTTPRendersOrphanMarkdownAsPlainPageAfterTopicDelete(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime/castle": {value: `{"type":"md","content":"# Castle","title":"Castle Notes"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/anime/castle", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if strings.Contains(response.Body.String(), `href="/anime"`) {
+		t.Fatalf("expected orphan markdown to render without topic backlink, got %q", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "Anime Archive") {
+		t.Fatalf("expected orphan markdown to render without topic title chrome, got %q", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "<title>Castle Notes</title>") {
+		t.Fatalf("expected orphan markdown to keep its own page title, got %q", response.Body.String())
+	}
+}
+
 func TestServeHTTPRendersStoredQRCode(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
