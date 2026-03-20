@@ -1603,6 +1603,29 @@ func TestServeHTTPLeavesUnknownAssetPathToLookupFlow(t *testing.T) {
 	}
 }
 
+func TestServeHTTPServesUnknownAssetPathWhenStoredAsRegularItem(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:asset/not-exist.txt": {value: `{"type":"text","content":"plain asset-like content","title":"Asset Like"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/asset/not-exist.txt", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Cache-Control") != publicCacheControl {
+		t.Fatalf("expected default cache header %q, got %q", publicCacheControl, response.Header().Get("Cache-Control"))
+	}
+	if response.Body.String() != "plain asset-like content\n" {
+		t.Fatalf("expected stored regular item content, got %q", response.Body.String())
+	}
+}
+
 func TestServeHTTPReturnsTopicHomeWithTopicCacheHeader(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{

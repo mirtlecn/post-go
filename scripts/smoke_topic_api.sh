@@ -7,10 +7,24 @@ REDIS_URL="${LINKS_REDIS_URL:-redis://localhost:6379/14}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/smoke_common.sh"
-trap cleanup_smoke_tmp EXIT
 configure_redis "$REDIS_URL"
 
 TOPIC="anime-$(date +%s)"
+TOPIC_FILE_PATH="$TOPIC/asset.txt"
+
+cleanup_topic_api_smoke() {
+  if [[ -n "${POST_BASE_URL:-}" ]]; then
+    curl -sS -X DELETE \
+      -H "Authorization: Bearer $POST_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"path\":\"$TOPIC_FILE_PATH\"}" \
+      "$POST_BASE_URL/" >/dev/null 2>&1 || true
+  fi
+  redis_flush >/dev/null 2>&1 || true
+  cleanup_smoke_tmp
+}
+
+trap cleanup_topic_api_smoke EXIT
 
 echo "Using POST_BASE_URL=$POST_BASE_URL"
 echo "Using Redis DB=$REDIS_DB"

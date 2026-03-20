@@ -7,11 +7,17 @@ REDIS_URL="${LINKS_REDIS_URL:-redis://localhost:6379/13}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/smoke_common.sh"
-trap cleanup_smoke_tmp EXIT
 configure_redis "$REDIS_URL"
 
 SMOKE_PREFIX="redis-smoke-$(date +%s)"
 TOPIC="$SMOKE_PREFIX-topic"
+
+cleanup_redis_storage_smoke() {
+  redis_flush >/dev/null 2>&1 || true
+  cleanup_smoke_tmp
+}
+
+trap cleanup_redis_storage_smoke EXIT
 
 echo "Using POST_BASE_URL=$POST_BASE_URL"
 echo "Using Redis DB=$REDIS_DB"
