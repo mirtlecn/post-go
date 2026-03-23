@@ -1,154 +1,577 @@
-# Post-go REST API
+# Post-go Documentation
 
-> Reference for API consumers: request patterns, fields, examples, and error handling.
+This document explains Post-go from four angles:
 
-## 1. Base URL
+1. how to start, test, depend on, and debug it
+2. how Redis storage works
+3. how the HTTP API behaves, including parameters and boundaries
+4. how frontend rendering and display work
+
+The goal is not only to call the API, but to fully understand the project model so that you can reuse the same design in your own app.
+
+## 1. What This Project Really Is
+
+Post-go is a small self-hosted sharing service built around one core idea:
+
+- every public object lives at `/<path>`
+
+That object can be:
+
+- a text snippet
+- a short link
+- a Markdown page
+- an HTML page
+- a file
+- a QR code
+- a topic index page
+
+The server does not separate "admin route", "public route", and "frontend app" in the usual way. Instead:
+
+- `GET /<path>` is the public read path
+- `POST /`, `PUT /`, `DELETE /`, `GET /` are the authenticated management API
+- frontend pages are mostly server-rendered HTML
+
+This unified path model is the most important thing to understand before reading the rest.
+
+## 2. Start, Test, Dependencies, and Debugging
+
+### 2.1 Entry and startup order
+
+The process entry is `cmd/post-server/main.go`.
+
+Startup order is:
+
+1. load `.env.local`, otherwise `.env`
+2. check embedded frontend assets
+3. create HTTP handler with `httpapi.NewHandler()`
+4. verify `SECRET_KEY` and `LINKS_REDIS_URL`
+5. start `http.ListenAndServe`
+
+Two details matter:
+
+- `.env.local` has higher priority than `.env`
+- existing system env vars are not overwritten by file values
+
+### 2.2 Required and optional dependencies
+
+Required runtime dependencies:
+
+- Redis
+- `SECRET_KEY`
+- `LINKS_REDIS_URL`
+
+Optional but required for file upload:
+
+- S3-compatible object storage
+- `S3_ENDPOINT`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `S3_BUCKET_NAME`
+- `S3_REGION`
+
+Important config values:
+
+- `PORT`, default `3000`
+- `MAX_CONTENT_SIZE_KB`, code default `500`
+- `MAX_FILE_SIZE_MB`, default `10`
+- `POST_DEBUG`, default `false`
+
+The sample file `.env.example` sets `MAX_CONTENT_SIZE_KB=512`, but the code default is `500`. If you do not set the env var, runtime uses `500`.
+
+### 2.3 Local startup flow
+
+Typical local startup flow:
+
+```bash
+cp .env.example .env.local
+make assets-sync
+make build
+./post-server
+```
+
+Why `make assets-sync` is required:
+
+- frontend assets are embedded into the Go binary
+- the server refuses to start if embedded assets are missing or incomplete
+- asset sync is implemented by `scripts/update_embedded_assets.go`
+
+If you only need text, short links, Markdown, HTML, QR code, and topic features, Redis is enough.
+
+If you need file upload, S3-compatible storage must be configured as well.
+
+### 2.4 Build and test model
+
+The `Makefile` defines this workflow:
+
+- `make build`: delete old binary, then build `./cmd/post-server`
+- `make test`: run `make build`, then `go test ./...`
+- `make smoke`: run `make build`, then `./scripts/smoke_all.sh`
+- `make assets-sync`: regenerate embedded assets
+
+`scripts/smoke_all.sh` is the real regression entrypoint. It does:
+
+1. build a temporary server binary at `/tmp/post-server-smoke-all`
+2. run `go test ./...`
+3. run render smoke
+4. run embedded asset and HTTP API smoke on port `3012`, Redis DB `15`
+5. run topic smoke on port `3013`, Redis DB `14`
+6. run Redis storage smoke on port `3014`, Redis DB `13`
+
+So `make smoke` is not just "smoke only". It is effectively:
+
+- build
+- unit tests
+- render checks
+- HTTP API checks
+- topic checks
+- Redis storage checks
+
+Full smoke requires:
+
+- local Redis on `localhost:6379`
+- `curl`
+- `jq`
+- `redis-cli`
+
+### 2.5 How to debug it effectively
+
+The practical debug switch is:
+
+```bash
+POST_DEBUG=true
+```
+
+That enables request-level logs from `internal/httpapi/logging.go`, including:
+
+- method
+- path
+- user agent
+- content type
+- forwarded headers
+- response status
+- response size
+- elapsed time
+
+Useful startup observations:
+
+- `Loaded env from: .env.local` means config file was loaded
+- asset missing error means you need `make assets-sync`
+- missing env error means `LINKS_REDIS_URL` or `SECRET_KEY` is not set
+- `env: PORT=... LINKS_REDIS_URL=...` means server is about to listen
+
+Best debugging entrypoints by problem type:
+
+- startup problem: `cmd/post-server/main.go`, `cmd/post-server/main_test.go`
+- HTTP behavior: `internal/httpapi/*`, `scripts/smoke_http_api.sh`
+- topic behavior: `internal/httpapi/topic_helpers.go`, `scripts/smoke_topic_api.sh`
+- Redis persistence: `internal/storage/storage.go`, `scripts/smoke_redis_storage.sh`
+- render/frontend behavior: `internal/convert/convert.go`, `internal/topic/render.go`, `scripts/smoke_render.sh`
+
+This project does not provide:
+
+- health endpoint
+- pprof endpoint
+- hot reload
+- built-in delve flow
+
+So the real debugging stack is:
+
+- request logs
+- unit tests
+- smoke scripts
+- direct Redis inspection
+
+## 3. Redis Storage Logic
+
+### 3.1 Redis has three jobs
+
+Redis is used for three different things:
+
+1. main object storage
+2. topic member index
+3. file cache
+
+The client is created in `internal/redis/client.go`. Clients are cached by Redis URL, and the code performs `PING` before using a new client.
+
+### 3.2 Main content keys
+
+The main content key format is:
 
 ```text
-http://host:port
+surl:<path>
 ```
+
+Examples:
+
+```text
+surl:hello
+surl:docs/api
+surl:anime
+surl:anime/castle
+```
+
+The stored value is JSON defined by `internal/storage/storage.go`:
+
+```json
+{
+  "type": "text",
+  "content": "hello",
+  "title": "Greeting",
+  "created": "2026-03-23T10:00:00Z"
+}
+```
+
+Meaning of fields:
+
+- `type`: stored content type
+- `content`: raw payload or object key
+- `title`: display title
+- `created`: business timestamp, not Redis timestamp
+
+If old data is not valid JSON, the parser falls back to:
+
+- `type=text`
+- `content=<raw stored string>`
+
+That fallback is useful for backward compatibility.
+
+### 3.3 TTL behavior
+
+TTL is only supported for normal objects.
+
+Rules:
+
+- omitted `ttl`: persistent
+- `ttl=0`: persistent
+- `ttl>0`: expire after that many minutes
+- max value: `525600` minutes
+
+Topic home does not support TTL. If `type=topic` and `ttl` is provided, the request is rejected.
+
+TTL is applied to the Redis key itself, not to a field inside the JSON payload.
+
+### 3.4 Topic storage model
+
+A topic is not a separate table or service. It is a combination of:
+
+1. one main object at `surl:<topic>`
+2. one sorted set at `topic:<topic>:items`
+3. one regenerated HTML index page stored back into `surl:<topic>`
 
 Example:
 
 ```text
-http://localhost:3000
+surl:anime
+topic:anime:items
+surl:anime/castle
+surl:anime/howl
 ```
 
----
+The sorted set stores topic members by relative path:
 
-## 2. Authentication
+- member: `castle`
+- member: `howl`
 
-Write operations and management queries require a Bearer token:
+not full path.
+
+The set also contains a placeholder member:
+
+```text
+__topic_placeholder__
+```
+
+This keeps the zset alive even when the topic has no real members.
+
+### 3.5 How topic write flows work
+
+When you create or update a topic member:
+
+1. write the normal object to `surl:<topic>/<member>`
+2. `ZADD topic:<topic>:items <member>`
+3. rebuild topic index HTML
+4. write rebuilt HTML back to `surl:<topic>`
+
+When you delete a topic member:
+
+1. delete `surl:<topic>/<member>`
+2. `ZREM topic:<topic>:items <member>`
+3. rebuild topic index HTML
+
+When you create a topic home:
+
+1. write `surl:<topic>` with `type=topic`
+2. scan existing keys matching `surl:<topic>/*`
+3. adopt them into `topic:<topic>:items`
+4. ensure placeholder member exists
+5. rebuild topic HTML
+
+This means a topic can "adopt" old paths that already existed before the topic home was created.
+
+### 3.6 Topic delete semantics
+
+Deleting a topic does not delete its members.
+
+It only deletes:
+
+- `surl:<topic>`
+- `topic:<topic>:items`
+
+Child objects like `surl:<topic>/entry` remain in Redis.
+
+After topic deletion, those paths become orphaned normal objects.
+
+This is a very important behavior if you want to embed the model into your own app.
+
+### 3.7 Sorting and listing
+
+Global list behavior:
+
+- scan `surl:*`
+- batch read values with `MGET`
+- sort by `created` descending
+- if `created` cannot be parsed, place later
+- then sort by path ascending
+
+Topic index behavior:
+
+- read `ZREVRANGE WITHSCORES`
+- batch load member objects
+- prefer each member's `created` as the display timestamp
+- if `created` is missing or invalid, fall back to zset score
+- sort descending by time, then ascending by path
+
+Topic member count is:
+
+```text
+ZCARD - 1
+```
+
+because the placeholder member is excluded.
+
+### 3.8 File cache
+
+Small files are cached in Redis after being fetched from S3.
+
+Keys:
+
+```text
+cache:file:<path>
+cache:filemeta:<path>
+```
+
+File cache TTL is fixed at:
+
+- 1 hour
+
+Cache metadata stores:
+
+- content type
+- content length
+- encoding
+- checksum
+
+This cache is separate from the main object storage and separate from the topic zset model.
+
+## 4. HTTP API Behavior, Parameters, and Boundaries
+
+### 4.1 Routing model
+
+The root router is in `internal/httpapi/router.go`.
+
+`/` behavior:
+
+- `POST /`: authenticated create
+- `PUT /`: authenticated upsert
+- `DELETE /`: authenticated delete
+- `GET /`: authenticated management API, otherwise public lookup of path `/`
+
+`/<path>` behavior:
+
+- if reserved embedded asset path, serve asset
+- otherwise do public content lookup
+
+### 4.2 Authentication model
+
+Authentication is simple:
 
 ```http
 Authorization: Bearer <SECRET_KEY>
 ```
 
-Common authenticated operations:
+It is used only for:
 
 - `POST /`
 - `PUT /`
 - `DELETE /`
-- `GET /` (management API)
+- management `GET /`
 
-Public reads use `GET /{path}` and do not require authentication.
+Public `GET /<path>` needs no authentication.
 
----
+The system does not support:
 
-## 3. Content Types
+- cookie auth
+- query token
+- basic auth
 
-Set `type` when creating/updating content:
+### 4.3 Create and update requests
 
-- `text`: plain text
-- `url`: URL link (public reads return `302` redirect)
-- `md`: stored Markdown; public reads render HTML
-- `html`: HTML content
-- `file`: file upload (`multipart/form-data`)
-- `topic`: topic page for grouping members
-- `md2html`: write-time alias of Markdown; stored as `md`
-- `qrcode`: stored raw input; public reads render a text QR code
+There are two write formats:
 
-`convert` can be used as an alias for `type`.
-
-Stored `type` values:
-
-- `url`
-- `text`
-- `md`
-- `html`
-- `file`
-- `qrcode`
-- `topic`
-
-Normalization rules:
-
-- if both `type` and `convert` are provided, they must match
-- if neither is provided:
-  - URL-like input becomes `url`
-  - other input becomes `text`
-- stored `created` is normalized to UTC `RFC3339`
-
----
-
-## 4. Common Request Fields
+- JSON body
+- `multipart/form-data` for file upload
 
 Common JSON fields:
 
-| Field | Type | Required | Description |
-|---|---|---:|---|
-| `url` | string | Yes* | Main payload (text, link, markdown, etc.) |
-| `path` | string | No | Short path; server may auto-generate if omitted |
-| `title` | string | No | Display title |
-| `created` | string | No | Creation timestamp |
-| `type` | string | No | Content type |
-| `convert` | string | No | Alias of `type` |
-| `ttl` | integer | No | Expiration in minutes |
-| `topic` | string | No | Topic assignment |
+- `url`
+- `path`
+- `title`
+- `type`
+- `convert`
+- `created`
+- `ttl`
+- `topic`
 
-> `url` is not required when `type=topic`.
+Type rules:
 
-### Path Rules
+- `md2html` is only an input alias
+- it is stored as `md`
+- real rendering happens on public read
 
-- Max length: 99
-- Allowed characters: `a-z A-Z 0-9 - _ . / ( )`
-- Leading/trailing `/` is trimmed
-- `path` and `path/` are treated as the same path
-- `asset/...` is reserved and cannot be used for user content
+Automatic type inference:
 
-### TTL Rules
+- if no type is provided and `url` looks like a full URL with scheme, store as `url`
+- otherwise store as `text`
 
-- Unit: minutes
-- Range: `0 ~ 525600`
-- `0` means no expiration
-- `topic` itself does not support TTL
+Path rules:
 
----
+- length `1-99`
+- allowed chars: `a-z A-Z 0-9 - _ . / ( )`
+- leading and trailing slash are trimmed
+- empty inner path segment is rejected in topic member context
+- reserved asset paths cannot be used
 
-## 5. Response Format
+If `path` is omitted for normal `POST`, the server generates a 5-character short path.
 
-### 5.1 Item Object
+### 4.4 `POST /`
 
-```json
-{
-  "surl": "http://host/path",
-  "path": "path",
-  "type": "text",
-  "title": "Greeting",
-  "created": "2022-10-11T01:11:01Z",
-  "ttl": 10,
-  "content": "hello"
-}
+`POST /` means create only.
+
+If path already exists:
+
+- response is `409 conflict`
+- hint is `Use PUT to overwrite`
+
+If creation succeeds:
+
+- response is `201`
+
+### 4.5 `PUT /`
+
+`PUT /` means upsert.
+
+Behavior:
+
+- existing path: update, return `200`
+- missing path: create, return `201`
+
+If the target already exists and `created` is not explicitly provided:
+
+- old `created` is preserved
+
+This matters if your app uses `created` for sorting or topic ordering.
+
+### 4.6 `DELETE /`
+
+Delete uses JSON body and requires `path`.
+
+Special cases:
+
+- if `type=topic`, delete topic home and topic index only
+- if deleting a topic member, also update the topic zset and rebuilt topic HTML
+- if deleting a file object and S3 is configured, the server tries to delete the object from storage too
+
+### 4.7 Authenticated `GET /`
+
+This is a management API, not a public content route.
+
+It supports JSON request body, which is unusual for `GET`.
+
+Three modes:
+
+1. body contains `path`: lookup one object
+2. body has `type=topic` and no `path`: list all topics
+3. otherwise: list all stored objects
+
+This is easy to miss if you only read the route table and assume query params.
+
+### 4.8 Public `GET /<path>`
+
+Public reads switch behavior by stored type:
+
+- `url`: `302` redirect
+- `topic`: HTML page
+- `html`: raw HTML
+- `md`: rendered HTML
+- `qrcode`: text QR output
+- `file`: stream from S3
+- anything else: plain text
+
+This means the public read route is a type-driven renderer.
+
+### 4.9 Response content and export mode
+
+Management API responses do not always return full content.
+
+Default `content` behavior:
+
+- `text`, `html`, `md`, `qrcode`: first 15 characters, then `...` if needed
+- `url`, `file`: full stored value
+- `topic`: member count as string
+
+If request header contains:
+
+```http
+x-export: true
 ```
 
-Field notes:
+then management responses return full stored content for non-topic objects.
 
-- `surl`: full public URL
-- `path`: short path
-- `type`: content type
-- `title`: title (always present; defaults to `""`)
-- `created`: timestamp (`"illegal"` may appear if missing/invalid in storage)
-- `ttl`: remaining TTL (`null` when non-expiring)
-- `content`: preview by default
+Topic still returns member count, not full HTML.
 
-Preview rules:
+### 4.10 File upload behavior
 
-- `text`, `html`, `md`, and `qrcode` return the first `15` characters, then `...` when truncated
-- `url` and `file` return the full stored value
-- `topic` returns the current member count as a string
-- setting header `x-export: true` returns full stored content for non-topic items
+File upload requires `multipart/form-data`.
 
-### 5.2 Error Object
+Required field:
 
-```json
-{
-  "error": "Invalid JSON body",
-  "code": "invalid_request",
-  "hint": null,
-  "details": null
-}
-```
+- `file`
 
-Common `code` values:
+Optional fields:
+
+- `path`
+- `title`
+- `ttl`
+- `topic`
+- `created`
+
+Important behaviors:
+
+- if S3 is not configured, upload returns `501 s3_not_configured`
+- `PUT` upload requires `path`
+- if uploaded filename has an extension and the path does not, the server appends the extension automatically
+- upload MIME type is chosen by:
+  1. usable multipart content type
+  2. extension inference
+  3. body sniffing
+  4. fallback to `application/octet-stream`
+
+Large files are streamed back from object storage.
+
+Small files, if size is within `MaxContentKB`, are also cached into Redis after first read.
+
+### 4.11 Error and edge behavior
+
+Common error codes:
 
 - `unauthorized`
 - `invalid_request`
@@ -157,264 +580,301 @@ Common `code` values:
 - `payload_too_large`
 - `internal`
 - `s3_not_configured`
+- `method_not_allowed`
+- `forbidden`
 
----
+Important boundaries you should design around in your own app:
 
-## 6. Endpoints
+- `type` and `convert` must match if both are set
+- `type=url` requires a scheme like `https://`
+- `ttl` must be a natural number
+- `ttl` max is `525600`
+- `type=topic` cannot use `ttl`
+- reserved embedded asset paths cannot be used for user objects
+- topic home cannot be overwritten as a normal object
+- topic delete does not cascade to children
+- invalid or missing stored `created` does not block read, but response may show `illegal`
+- internal asset paths are same-origin only
 
-## 6.1 Create: `POST /`
+## 5. Frontend Display and Rendering Logic
 
-Create regular content, Topic pages, or upload files.
+### 5.1 This project does not have a separate frontend app
 
-### 6.1.1 Create text (JSON)
+There is no SPA and no standalone frontend build pipeline.
 
-```bash
-curl -X POST "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "note",
-    "url": "hello",
-    "title": "Greeting",
-    "type": "text",
-    "ttl": 10
-  }'
+Frontend behavior is mostly:
+
+- server-rendered HTML
+- embedded static assets
+- a few client-side helpers loaded only when needed
+
+That makes Post-go closer to a content server than a classic frontend-backend split app.
+
+### 5.2 Embedded asset model
+
+Embedded assets are declared in `internal/assets/manifest.json` and loaded by `internal/assets/embedded.go`.
+
+They are embedded with:
+
+```go
+//go:embed manifest.json files/*
 ```
 
-### 6.1.2 Create short link (JSON)
+Current asset categories include:
 
-```bash
-curl -X POST "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "openai",
-    "url": "https://openai.com",
-    "type": "url"
-  }'
-```
+- base CSS
+- highlight.js CSS and JS
+- GitHub-flavored Markdown addon CSS and JS
 
-### 6.1.3 Create Topic
+These assets are generated and synced by `scripts/update_embedded_assets.go`.
 
-```bash
-curl -X POST "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "anime",
-    "type": "topic",
-    "title": "Anime Archive"
-  }'
-```
+They are not intended to be maintained by hand.
 
-### 6.1.4 Upload file (multipart)
+### 5.3 Reserved asset routes
 
-```bash
-curl -X POST "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -F "path=manual" \
-  -F "title=Manual" \
-  -F "file=@./manual.pdf"
-```
+Embedded assets are served from hashed paths such as:
 
-Notes:
-
-- Requires configured S3-compatible storage
-- If `path` has no extension, the server appends the uploaded file extension
-
----
-
-## 6.2 Upsert: `PUT /`
-
-Update by `path`; create if not found.
-
-```bash
-curl -X PUT "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "note",
-    "url": "hello v2",
-    "type": "text"
-  }'
+```text
+/asset/md-base-7f7c1c5a.css
 ```
 
 Behavior:
 
-- Exists: update and return `200`
-- Missing: create and return `201`
-- May include `overwritten` (preview or export payload of previous content)
+- only `GET` and `HEAD`
+- same-origin or same-site only
+- cache policy: `public, max-age=31536000, immutable`
 
-### Topic rebuild
+Two consequences:
 
-```bash
-curl -X PUT "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "anime",
-    "type": "topic",
-    "title": "Anime Archive"
-  }'
-```
+1. business content cannot occupy those paths
+2. these assets are public-cacheable but not intended for arbitrary cross-site hotlinking
 
-Use this to refresh Topic home and member indexes.
+### 5.4 Markdown rendering model
 
----
+Markdown conversion is implemented in `internal/convert/convert.go` using Goldmark.
 
-## 6.3 Delete: `DELETE /`
+Enabled features include:
 
-### Delete regular content
+- GitHub Flavored Markdown
+- footnotes
+- GitHub alert/callout blocks
+- KaTeX
 
-```bash
-curl -X DELETE "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"path": "note"}'
-```
+Markdown is rendered into a complete HTML document, not a fragment.
 
-### Delete Topic
+The HTML shell includes:
 
-```bash
-curl -X DELETE "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "anime",
-    "type": "topic"
-  }'
-```
+- `<!doctype html>`
+- `meta charset`
+- viewport
+- `<title>`
+- embedded base CSS
+- inline layout CSS
+- `<article class="markdown-body">`
 
-> Deleting a Topic does not delete the underlying items under that path prefix.
+The layout is intentionally simple:
 
----
+- centered reading page
+- max width `838px`
+- desktop padding `45px`
+- mobile padding `25px`
 
-## 6.4 Management Query: `GET /`
+### 5.5 Dynamic asset injection
 
-Authenticated management lookup APIs.
+Assets are injected based on rendered HTML features.
 
-### List all content
+If the page has at least two headings:
 
-```bash
-curl -X GET "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN"
-```
+- inject GFM addon CSS and JS
 
-### Lookup single path
+If the page contains fenced code blocks with language classes:
 
-```bash
-curl -X GET "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"path": "note"}'
-```
+- inject highlight.js and light/dark theme CSS
 
-### Lookup Topic
+If the page contains KaTeX output:
 
-```bash
-curl -X GET "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "anime",
-    "type": "topic"
-  }'
-```
+- inject external KaTeX CSS from CDN
 
----
+That last point matters:
 
-## 6.5 Public Read: `GET /{path}`
+- most frontend assets are embedded
+- KaTeX CSS is an explicit external exception
 
-Public access path behavior by `type`:
+### 5.6 How each content type is displayed
 
-- `url`: `302 Found` redirect
-- `text`: plain text response
-- `md`: render stored Markdown to HTML
-- `html`: HTML response
-- `qrcode`: render stored input to text QR code
-- `file`: file stream response
-- `topic`: topic HTML page
+Public display behavior:
 
-Example:
+- `url`: browser redirect
+- `html`: raw HTML response
+- `md`: rendered HTML page
+- `topic`: prebuilt HTML page from Redis
+- `qrcode`: terminal-style text QR code
+- `file`: raw file response
+- `text`: plain text
 
-```bash
-curl -i "$POST_BASE_URL/note"
-```
+So "frontend behavior" is actually distributed across content types instead of being one central browser app.
 
----
+### 5.7 Topic page rendering
 
-## 7. Topic Usage
+Topic page generation is in `internal/topic/render.go`.
 
-Two ways to write content into a Topic:
+A topic page is not rebuilt on every request.
 
-### Method A: Explicit `topic`
+Instead:
 
-```json
-{
-  "topic": "anime",
-  "path": "castle-notes",
-  "url": "# Castle",
-  "type": "md2html"
-}
-```
+- when topic members change
+- the server regenerates the topic index
+- stores the resulting HTML into `surl:<topic>`
+- later public reads simply return that HTML
 
-### Method B: Prefix path directly
+This is an important architecture choice:
 
-```json
-{
-  "path": "anime/castle-notes",
-  "url": "# Castle",
-  "type": "md2html"
-}
-```
+- lower request-time cost
+- simpler public serving path
+- topic index becomes a materialized view
 
-If multiple Topics match by prefix, the **longest prefix** wins.
+Topic page display rules:
 
----
+- heading uses topic title, defaulting to path
+- show `Home`
+- render a flat Markdown list of members
+- sort by updated time descending
+- use title if present, otherwise use relative path
 
-## 8. Export Mode
+Type marks:
 
-Add header:
+- `url`: `↗`
+- `text` and `qrcode`: `☰`
+- `file`: `◫`
+- `html` and `md`: no extra mark
 
-```http
-x-export: true
-```
+Display date uses:
 
-Available for create/update/delete/lookup/list.
+- `Asia/Shanghai`
 
-Effect:
+### 5.8 Topic item Markdown pages
 
-- Regular content: `content` returns full raw content (not preview)
-- Topic: `content` remains the member count string
+When a Markdown page belongs to a topic, public rendering adds a topic header above the content.
 
----
+That header includes:
 
-## 9. Date & Time
+- topic title
+- a `Home` link back to the topic page
+- optional current page title
 
-`created` accepts multiple input formats (for example RFC3339 or `2006-01-02`).
+This is not handled by a separate template engine.
 
-The server normalizes and stores it as UTC RFC3339.
+Instead, the renderer prepends extra Markdown/HTML structure before conversion.
 
----
+## 6. How To Reuse This Design In Your Own App
 
-## 10. Quick Start Snippets
+If you want to build your own app on top of the same ideas, the easiest way is to copy the architecture, not just the endpoints.
 
-```bash
-export POST_BASE_URL="http://localhost:3000"
-export POST_TOKEN="your-secret-key"
-```
+### 6.1 Keep the unified path model
 
-Create text:
+Use one public namespace:
 
-```bash
-curl -X POST "$POST_BASE_URL/" \
-  -H "Authorization: Bearer $POST_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"path":"hello","url":"Hello","type":"text"}'
-```
+- `/<path>`
 
-Read text:
+and let object type decide read behavior.
 
-```bash
-curl "$POST_BASE_URL/hello"
-```
+This keeps URLs simple and makes all content share one routing contract.
+
+### 6.2 Separate write auth from public read
+
+Post-go uses a simple and effective rule:
+
+- public read is anonymous
+- write and management read require one secret token
+
+For internal tools, temporary share systems, AI agent bridges, and app-to-app posting, this is often enough.
+
+### 6.3 Treat topic as a materialized index
+
+Do not compute topic pages on every request.
+
+Instead:
+
+1. store child objects normally
+2. maintain a zset index
+3. rebuild topic HTML whenever membership changes
+
+That gives you:
+
+- fast public read
+- deterministic ordering
+- simple cache behavior
+
+### 6.4 Separate blob storage from metadata storage
+
+The project uses:
+
+- Redis for metadata and indexes
+- S3 for file bodies
+- Redis file cache for hot small files
+
+That split is practical for apps that want:
+
+- simple object lookup
+- object TTL
+- cheap listing
+- scalable file download path
+
+### 6.5 Keep content types coarse and predictable
+
+The type system here is intentionally small:
+
+- `text`
+- `url`
+- `md`
+- `html`
+- `file`
+- `qrcode`
+- `topic`
+
+That keeps the read path easy to reason about. If you add too many variants, `GET /<path>` quickly becomes hard to maintain.
+
+## 7. Suggested Learning Order For A Go Developer
+
+If you already understand basic Go but want to fully understand this project, read in this order:
+
+1. `README.md`
+2. `cmd/post-server/main.go`
+3. `internal/httpapi/router.go`
+4. `internal/httpapi/write_handlers.go`
+5. `internal/httpapi/read_handlers.go`
+6. `internal/httpapi/topic_helpers.go`
+7. `internal/storage/storage.go`
+8. `internal/convert/convert.go`
+9. `internal/topic/render.go`
+10. `scripts/smoke_http_api.sh`
+11. `scripts/smoke_topic_api.sh`
+12. `scripts/smoke_redis_storage.sh`
+
+If you read in this order, you will understand the system from:
+
+- process entry
+- route dispatch
+- write path
+- read path
+- storage model
+- render model
+- regression coverage
+
+## 8. Key Takeaways
+
+The most important facts about Post-go are:
+
+- it is a unified-path content server
+- Redis stores both objects and topic indexes
+- topic pages are prebuilt and materialized
+- public reads are type-driven
+- frontend is mostly server-rendered HTML plus embedded assets
+- the real operational contract is best learned from smoke tests, not only from `API.md`
+
+If you want to adapt this project into your own app, the strongest reusable parts are:
+
+- the `/<path>` data model
+- the Redis `surl:<path>` storage layout
+- the topic zset plus materialized index pattern
+- the separation between public read and authenticated write
