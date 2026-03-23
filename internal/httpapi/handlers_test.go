@@ -26,6 +26,8 @@ type fakeRedisStore struct {
 	getResults   map[string]fakeStringResult
 	setErr       error
 	setExErr     error
+	setErrKeys   map[string]error
+	setExErrKeys map[string]error
 	delErr       error
 	unlinkErr    error
 	existsResult int64
@@ -86,6 +88,9 @@ func (f *fakeRedisStore) Set(ctx context.Context, key string, value any, expirat
 		f.getResults = map[string]fakeStringResult{}
 	}
 	f.getResults[key] = fakeStringResult{value: f.lastSetValue}
+	if err, ok := f.setErrKeys[key]; ok {
+		return redis.NewStatusResult("", err)
+	}
 	return redis.NewStatusResult("OK", f.setErr)
 }
 
@@ -99,6 +104,9 @@ func (f *fakeRedisStore) SetEx(ctx context.Context, key string, value any, expir
 		f.getResults = map[string]fakeStringResult{}
 	}
 	f.getResults[key] = fakeStringResult{value: f.lastSetValue}
+	if err, ok := f.setExErrKeys[key]; ok {
+		return redis.NewStatusResult("", err)
+	}
 	return redis.NewStatusResult("OK", f.setExErr)
 }
 
@@ -762,6 +770,23 @@ func TestResolveTopicPathNormalizesTrailingSlashForTopicItem(t *testing.T) {
 	}
 }
 
+func TestResolveTopicPathNormalizesExplicitTopicName(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	resolved, err := handler.resolveTopicPath(context.Background(), store, "/anime/", "castle")
+	if err != nil {
+		t.Fatalf("expected resolve to succeed, got %v", err)
+	}
+	if resolved.TopicName != "anime" || resolved.FullPath != "anime/castle" || resolved.RelativePath != "castle" {
+		t.Fatalf("unexpected resolved path: %+v", resolved)
+	}
+}
+
 func TestHandlePathNormalizesTrailingSlashOnLookup(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -1119,6 +1144,145 @@ func TestHandleDeleteReturnsInternalErrorWhenRedisDeleteFails(t *testing.T) {
 	body := decodeErrorPayload(t, response)
 	if body.Code != "internal" {
 		t.Fatalf("expected internal error code, got %q", body.Code)
+	}
+}
+
+func TestHandleDeleteTopicItemUpdatesTopicIndexBeforeResponding(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime":        {value: `{"type":"topic","content":"<html></html>","title":"Anime"}`},
+			"surl:anime/castle": {value: `{"type":"text","content":"hello","title":"Castle","created":"2022-10-11T01:11:01Z"}`},
+		},
+		zrangeResult: []redis.Z{
+			{Score: 0, Member: topicPlaceholderMember},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"anime/castle"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if len(store.zremKeys) != 1 || store.zremKeys[0] != "topic:anime:items" {
+		t.Fatalf("expected topic member removal, got keys=%v members=%v", store.zremKeys, store.zremMembers)
+	}
+	if store.lastSetKey != "surl:anime" {
+		t.Fatalf("expected topic home rebuild before response, got last set key %q", store.lastSetKey)
+	}
+	if _, ok := store.getResults["surl:anime/castle"]; ok {
+		t.Fatalf("expected deleted item to be removed from store")
+	}
+}
+
+func TestHandleDeleteTopicItemRollsBackWhenZRemFails(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime":        {value: `{"type":"topic","content":"<html></html>","title":"Anime"}`},
+			"surl:anime/castle": {value: `{"type":"text","content":"hello","title":"Castle","created":"2022-10-11T01:11:01Z"}`},
+		},
+		ttlResult: time.Hour,
+		zremErr:   errors.New("zrem failed"),
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"anime/castle"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.Code)
+	}
+	if restored, ok := store.getResults["surl:anime/castle"]; !ok || restored.value == "" {
+		t.Fatalf("expected deleted item to be restored, got %+v", store.getResults["surl:anime/castle"])
+	}
+}
+
+func TestHandleDeleteTopicItemRollsBackWhenTopicRebuildFails(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime":        {value: `{"type":"topic","content":"<html></html>","title":"Anime"}`},
+			"surl:anime/castle": {value: `{"type":"text","content":"hello","title":"Castle","created":"2022-10-11T01:11:01Z"}`},
+		},
+		ttlResult: time.Hour,
+		zrangeResult: []redis.Z{
+			{Score: 0, Member: topicPlaceholderMember},
+		},
+		setErrKeys: map[string]error{
+			"surl:anime": errors.New("rebuild failed"),
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"anime/castle"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.Code)
+	}
+	if restored, ok := store.getResults["surl:anime/castle"]; !ok || restored.value == "" {
+		t.Fatalf("expected deleted item to be restored, got %+v", store.getResults["surl:anime/castle"])
+	}
+	if len(store.zaddKeys) == 0 || store.zaddKeys[len(store.zaddKeys)-1] != "topic:anime:items" {
+		t.Fatalf("expected rollback zadd call, got %+v", store.zaddKeys)
+	}
+}
+
+func TestHandleDeleteRejectsOversizedJSONBody(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"`+strings.Repeat("a", 70*1024)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status 413, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "payload_too_large" || body.Error != "Request body too large" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
+func TestHandleLookupAuthedRejectsOversizedJSONBody(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"`+strings.Repeat("a", 70*1024)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected oversized lookup body to be handled")
+	}
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status 413, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "payload_too_large" || body.Error != "Request body too large" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
+func TestHandleJSONCreateRejectsOversizedJSONBody(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"`+strings.Repeat("a", 530*1024)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status 413, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "payload_too_large" || body.Error != "Request body too large" {
+		t.Fatalf("unexpected error payload: %+v", body)
 	}
 }
 

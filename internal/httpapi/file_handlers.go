@@ -33,10 +33,10 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	defer file.Close()
 
 	pathVal := r.FormValue("path")
-	pathVal = storage.NormalizePath(pathVal)
 	ttlVal := r.FormValue("ttl")
 	titleVal := r.FormValue("title")
 	topicVal := r.FormValue("topic")
+	pathVal, topicVal = normalizePathAndTopic(pathVal, topicVal)
 	createdVal, createdProvided, err := parseCreatedFormValue(r.FormValue("created"))
 	if err != nil {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)

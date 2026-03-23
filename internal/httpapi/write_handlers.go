@@ -14,10 +14,9 @@ import (
 )
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	body, err := storage.ParseJSONBody(r)
+	body, err := parseJSONBodyForDelete(r)
 	if err != nil {
-		requestLogger{}.Warnf("delete parse json failed: %v", err)
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body", nil, nil)
+		writeJSONBodyError(w, err, requestLogger{}, "delete")
 		return
 	}
 	pathVal, ok := storage.MustString(body, "path")
@@ -25,7 +24,8 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
 		return
 	}
-	pathVal = storage.NormalizePath(pathVal)
+	topicVal, _ := storage.MustString(body, "topic")
+	pathVal, topicVal = normalizePathAndTopic(pathVal, topicVal)
 	if isReservedAssetPath(pathVal) {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", reservedAssetPathError(pathVal).Error(), nil, nil)
 		return
@@ -35,7 +35,6 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 		return
 	}
-	topicVal, _ := storage.MustString(body, "topic")
 	ctx := context.Background()
 	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
 	if err != nil {
@@ -43,67 +42,32 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	if typeInfo.InputType == topicType {
-		h.handleTopicDelete(w, r, rdb, pathVal)
-		return
-	}
-	resolvedPath, err := h.resolveTopicPath(ctx, rdb, topicVal, pathVal)
-	if err != nil {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
-		return
-	}
-	if resolvedPath.IsTopicItem {
-		pathVal = resolvedPath.FullPath
-	}
-	if exists, err := h.topicExists(ctx, rdb, pathVal); err == nil && exists {
-		utils.Error(w, http.StatusBadRequest, "invalid_request", topicHomeManagedError, nil, nil)
-		return
-	}
-	key := storage.LinksPrefix + pathVal
-	stored, err := rdb.Get(ctx, key).Result()
-	if err != nil {
-		requestLogger{}.Warnf("delete miss: %s (%v)", pathVal, err)
+	result, err := h.deleteItem(ctx, rdb, pathVal, topicVal, typeInfo)
+	if err == errDeleteNotFound {
 		utils.Error(w, http.StatusNotFound, "not_found", "path \""+pathVal+"\" not found", nil, nil)
 		return
 	}
-	if err := rdb.Del(ctx, key).Err(); err != nil {
-		requestLogger{}.Errorf("redis delete failed: %s (%v)", pathVal, err)
-		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+	if err != nil {
+		switch err.Error() {
+		case topicHomeManagedError, "topic does not exist", "`topic` and `path` must match", "`path` is required", "`path` must not be \"/\" when `topic` is provided", "`path` must not contain empty topic members":
+			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		default:
+			requestLogger{}.Errorf("delete failed: path=%s topic=%s err=%v", pathVal, topicVal, err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		}
 		return
 	}
-	if err := h.deps.clearFileCache(ctx, rdb, pathVal); err != nil {
-		requestLogger{}.Warnf("clear file cache failed: %s (%v)", pathVal, err)
-	}
-
-	storedValue := storage.ParseStoredValue(stored)
-	if storedValue.Type == "file" {
+	if result.StoredValue.Type == "file" {
 		conf := h.Cfg.S3Config()
 		if conf.IsConfigured() {
 			if client, err := h.deps.newFileStore(conf); err == nil {
-				if err := client.DeleteObject(ctx, storedValue.Content); err != nil {
-					requestLogger{}.Errorf("s3 delete failed: %s (%v)", storedValue.Content, err)
+				if err := client.DeleteObject(ctx, result.StoredValue.Content); err != nil {
+					requestLogger{}.Errorf("s3 delete failed: %s (%v)", result.StoredValue.Content, err)
 				}
 			}
 		}
 	}
-
-	isExport := isExportRequest(r)
-	utils.JSON(w, http.StatusOK, DeleteResponse{
-		Deleted: pathVal,
-		Type:    storedValue.Type,
-		Title:   storedValue.Title,
-		Created: responseCreatedValue(storedValue.Created),
-		Content: responseContent(storedValue.Type, storedValue.Content, isExport),
-	})
-	if resolvedPath.IsTopicItem {
-		if err := rdb.ZRem(ctx, topicItemsKey(resolvedPath.TopicName), resolvedPath.RelativePath).Err(); err != nil {
-			requestLogger{}.Errorf("topic zrem failed: %v", err)
-			return
-		}
-		if err := h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
-			requestLogger{}.Errorf("topic rebuild failed: %v", err)
-		}
-	}
+	writeDeleteResult(w, r, result)
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request, allowOverwrite bool) {
@@ -121,15 +85,14 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request, allowOver
 }
 
 func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allowOverwrite bool) {
-	body, err := storage.ParseJSONBody(r)
+	body, err := parseJSONBodyForCreate(r, h.Cfg.MaxContentKB)
 	if err != nil {
-		requestLogger{}.Warnf("create parse json failed: %v", err)
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body", nil, nil)
+		writeJSONBodyError(w, err, requestLogger{}, "create")
 		return
 	}
 	pathVal, _ := storage.MustString(body, "path")
-	pathVal = storage.NormalizePath(pathVal)
 	topicVal, _ := storage.MustString(body, "topic")
+	pathVal, topicVal = normalizePathAndTopic(pathVal, topicVal)
 	titleVal, _ := storage.MustString(body, "title")
 	typeInfo, err := normalizeTypeAlias(body)
 	if err != nil {

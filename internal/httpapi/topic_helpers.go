@@ -109,6 +109,7 @@ func batchGetStoredValues(ctx context.Context, rdb redisStore, keys []string) (m
 }
 
 func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicName, pathVal string) (resolvedTopicPath, error) {
+	topicName = storage.NormalizePath(topicName)
 	pathVal = storage.NormalizePath(pathVal)
 	resolved := resolvedTopicPath{FullPath: pathVal}
 	if pathVal == "" {

@@ -13,6 +13,7 @@ import (
 const (
 	LinksPrefix   = "surl:"
 	PreviewLength = 15
+	DefaultJSONBodyMaxBytes = 512 * 1024
 )
 
 // StoredValue is the JSON payload persisted in Redis for a content item.
@@ -79,8 +80,22 @@ func GetDomain(r *http.Request) string {
 
 // ParseJSONBody reads and parses JSON body.
 func ParseJSONBody(r *http.Request) (map[string]any, error) {
+	return ParseJSONBodyWithLimit(r, DefaultJSONBodyMaxBytes)
+}
+
+// RequestBodyTooLargeError reports that the request body exceeded the configured limit.
+type RequestBodyTooLargeError struct {
+	MaxBytes int64
+}
+
+func (e *RequestBodyTooLargeError) Error() string {
+	return "request body too large"
+}
+
+// ParseJSONBodyWithLimit reads and parses JSON body with an explicit byte limit.
+func ParseJSONBodyWithLimit(r *http.Request, maxBytes int64) (map[string]any, error) {
 	defer r.Body.Close()
-	body, err := io.ReadAll(r.Body)
+	body, err := readRequestBodyWithLimit(r.Body, maxBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +109,33 @@ func ParseJSONBody(r *http.Request) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func readRequestBodyWithLimit(body io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = DefaultJSONBodyMaxBytes
+	}
+	var buf bytes.Buffer
+	chunk := make([]byte, 4096)
+	var total int64
+	for {
+		n, err := body.Read(chunk)
+		if n > 0 {
+			total += int64(n)
+			if total > maxBytes {
+				return nil, &RequestBodyTooLargeError{MaxBytes: maxBytes}
+			}
+			if _, writeErr := buf.Write(chunk[:n]); writeErr != nil {
+				return nil, writeErr
+			}
+		}
+		if err == io.EOF {
+			return buf.Bytes(), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 }
 
 // MustString reads a string field from map.

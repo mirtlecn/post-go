@@ -42,7 +42,7 @@ func main() {
 	}
 
 	addr := ":" + port
-	if err := serve(addr, h, port, h.Cfg.RedisURL, http.ListenAndServe); err != nil {
+	if err := serve(addr, h, port, http.ListenAndServe); err != nil {
 		log.Fatalf("server stopped: %v", err)
 	}
 }
@@ -51,10 +51,9 @@ func serve(
 	addr string,
 	handler http.Handler,
 	port string,
-	redisURL string,
 	listenAndServe func(string, http.Handler) error,
 ) error {
-	log.Printf("env: PORT=%s LINKS_REDIS_URL=%s", port, redisURL)
+	log.Printf("env: PORT=%s", port)
 	fmt.Printf("\n✅  Server running at http://localhost:%s\n", port)
 	fmt.Print("    Press Ctrl+C to stop.\n\n")
 	return listenAndServe(addr, handler)

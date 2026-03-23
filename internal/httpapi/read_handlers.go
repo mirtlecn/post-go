@@ -13,10 +13,9 @@ import (
 )
 
 func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Request) bool {
-	body, err := storage.ParseJSONBody(r)
+	body, err := parseJSONBodyForLookup(r)
 	if err != nil {
-		requestLogger{}.Warnf("lookup parse json failed: %v", err)
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body", nil, nil)
+		writeJSONBodyError(w, err, requestLogger{}, "lookup")
 		return true
 	}
 	typeInfo, err := normalizeTypeAlias(body)
@@ -36,7 +35,7 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required", nil, nil)
 		return true
 	}
-	pathVal = storage.NormalizePath(pathVal)
+	pathVal, _ = normalizePathAndTopic(pathVal, "")
 	if typeInfo.InputType == topicType {
 		h.handleTopicLookupAuthed(w, r, pathVal)
 		return true

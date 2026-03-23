@@ -2,6 +2,8 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -60,6 +62,38 @@ func TestParseJSONBodyPreservesJSONNumber(t *testing.T) {
 	}
 	if _, ok := body["ttl"].(json.Number); !ok {
 		t.Fatalf("expected json.Number, got %T", body["ttl"])
+	}
+}
+
+func TestParseJSONBodyWithLimitRejectsOversizedBody(t *testing.T) {
+	request := httptest.NewRequest("POST", "/", strings.NewReader(`{"message":"too large"}`))
+
+	_, err := ParseJSONBodyWithLimit(request, 8)
+	var tooLargeErr *RequestBodyTooLargeError
+	if !errors.As(err, &tooLargeErr) {
+		t.Fatalf("expected RequestBodyTooLargeError, got %v", err)
+	}
+	if tooLargeErr.MaxBytes != 8 {
+		t.Fatalf("expected max bytes 8, got %d", tooLargeErr.MaxBytes)
+	}
+}
+
+func TestParseJSONBodyWithLimitStopsReadingAfterLimit(t *testing.T) {
+	reader := &failAfterLimitReader{
+		chunks: [][]byte{
+			[]byte(`{"message":"`),
+			[]byte("0123456789"),
+		},
+	}
+	request := httptest.NewRequest("POST", "/", io.NopCloser(reader))
+
+	_, err := ParseJSONBodyWithLimit(request, 8)
+	var tooLargeErr *RequestBodyTooLargeError
+	if !errors.As(err, &tooLargeErr) {
+		t.Fatalf("expected RequestBodyTooLargeError, got %v", err)
+	}
+	if reader.reads != 1 {
+		t.Fatalf("expected reader to stop after first oversized read, got %d reads", reader.reads)
 	}
 }
 
@@ -154,4 +188,21 @@ func TestNormalizeCreatedTimeRejectsInvalidFormat(t *testing.T) {
 	if _, err := NormalizeCreatedTime("2012.01.11 09"); err == nil {
 		t.Fatalf("expected invalid created format")
 	}
+}
+
+type failAfterLimitReader struct {
+	chunks [][]byte
+	reads  int
+}
+
+func (r *failAfterLimitReader) Read(p []byte) (int, error) {
+	if r.reads >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	if r.reads > 0 {
+		return 0, errors.New("reader should not continue after limit")
+	}
+	n := copy(p, r.chunks[r.reads])
+	r.reads++
+	return n, nil
 }
