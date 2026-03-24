@@ -288,14 +288,18 @@ When you create or update a topic member:
 
 1. write the normal object to `surl:<topic>/<member>`
 2. `ZADD topic:<topic>:items <member>`
-3. rebuild topic index HTML
-4. write rebuilt HTML back to `surl:<topic>`
+3. scan existing keys matching `surl:<topic>/*` and adopt them into `topic:<topic>:items`
+4. ensure placeholder member exists
+5. rebuild topic index HTML
+6. write rebuilt HTML back to `surl:<topic>`
 
 When you delete a topic member:
 
 1. delete `surl:<topic>/<member>`
 2. `ZREM topic:<topic>:items <member>`
-3. rebuild topic index HTML
+3. scan existing keys matching `surl:<topic>/*` and adopt them into `topic:<topic>:items`
+4. ensure placeholder member exists
+5. rebuild topic index HTML
 
 When you create a topic home:
 
@@ -306,6 +310,8 @@ When you create a topic home:
 5. rebuild topic HTML
 
 This means a topic can "adopt" old paths that already existed before the topic home was created.
+
+When you refresh a topic home with `PUT` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching paths into `topic:<topic>:items`, ensures the placeholder member exists, and rebuilds the topic HTML.
 
 ### 3.6 Topic delete semantics
 

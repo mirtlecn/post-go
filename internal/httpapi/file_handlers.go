@@ -182,7 +182,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 			return
 		}
-		if err := h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
+		if err := h.syncTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
 			_ = rdb.ZRem(ctx, topicItemsKey(resolvedPath.TopicName), resolvedPath.RelativePath).Err()
 			_ = rdb.Del(ctx, key).Err()
 			if existing != "" {

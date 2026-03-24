@@ -112,7 +112,7 @@ func (h *Handler) deleteTopicItem(ctx context.Context, rdb redisStore, resolvedP
 		}
 		return deleteItemResult{}, err
 	}
-	if err := h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
+	if err := h.syncTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
 		if zaddErr := rdb.ZAdd(ctx, topicItemsKey(resolvedPath.TopicName), redis.Z{
 			Score:  float64(time.Now().Unix()),
 			Member: resolvedPath.RelativePath,

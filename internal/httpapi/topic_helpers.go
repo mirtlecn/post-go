@@ -242,6 +242,16 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 	}), 0).Err()
 }
 
+func (h *Handler) syncTopicIndex(ctx context.Context, rdb redisStore, topicName string) error {
+	if err := h.adoptTopicItems(ctx, rdb, topicName); err != nil {
+		return err
+	}
+	if err := ensureTopicItemsKey(ctx, rdb, topicName); err != nil {
+		return err
+	}
+	return h.rebuildTopicIndex(ctx, rdb, topicName)
+}
+
 func ensureTopicItemsKey(ctx context.Context, rdb redisStore, topicName string) error {
 	return rdb.ZAdd(ctx, topicItemsKey(topicName), redis.Z{
 		Score:  0,

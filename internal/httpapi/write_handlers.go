@@ -261,7 +261,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 			return
 		}
-		if err := h.rebuildTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
+		if err := h.syncTopicIndex(ctx, rdb, resolvedPath.TopicName); err != nil {
 			requestLogger{}.Errorf("topic rebuild failed: %v", err)
 			_ = rdb.ZRem(ctx, topicItemsKey(resolvedPath.TopicName), resolvedPath.RelativePath).Err()
 			if existing != "" {
@@ -330,15 +330,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	if err := h.adoptTopicItems(ctx, rdb, topicName); err != nil {
-		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-		return
-	}
-	if err := ensureTopicItemsKey(ctx, rdb, topicName); err != nil {
-		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-		return
-	}
-	if err := h.rebuildTopicIndex(ctx, rdb, topicName); err != nil {
+	if err := h.syncTopicIndex(ctx, rdb, topicName); err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}

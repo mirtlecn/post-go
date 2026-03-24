@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -129,7 +130,19 @@ func (f *fakeRedisStore) Unlink(ctx context.Context, keys ...string) *redis.IntC
 }
 
 func (f *fakeRedisStore) Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd {
-	return redis.NewScanCmdResult(f.scanKeys, f.scanCursor, nil)
+	pattern := "^" + regexp.QuoteMeta(match) + "$"
+	pattern = strings.ReplaceAll(pattern, "\\*", ".*")
+	glob, err := regexp.Compile(pattern)
+	if err != nil {
+		return redis.NewScanCmdResult(nil, 0, err)
+	}
+	keys := make([]string, 0, len(f.scanKeys))
+	for _, key := range f.scanKeys {
+		if glob.MatchString(key) {
+			keys = append(keys, key)
+		}
+	}
+	return redis.NewScanCmdResult(keys, f.scanCursor, nil)
 }
 
 func (f *fakeRedisStore) Exists(ctx context.Context, keys ...string) *redis.IntCmd {
@@ -203,6 +216,15 @@ func (f *fakeFileStore) GetObject(ctx context.Context, objectKey string) (*minio
 func (f *fakeFileStore) DeleteObject(ctx context.Context, objectKey string) error {
 	f.deleteCalls = append(f.deleteCalls, objectKey)
 	return f.deleteErr
+}
+
+func zaddMemberNames(members []redis.Z) []string {
+	names := make([]string, 0, len(members))
+	for _, member := range members {
+		name, _ := member.Member.(string)
+		names = append(names, name)
+	}
+	return names
 }
 
 func TestHandleJSONCreateReturnsInternalErrorWhenRedisSetFails(t *testing.T) {
@@ -521,6 +543,30 @@ func TestHandleJSONCreateStoresTopicTitle(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateTopicHomeAdoptsExistingChildren(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{
+			"surl:anime/castle",
+			"surl:anime/2026/post-1",
+			"surl:other/item",
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"path":"anime","type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	members := zaddMemberNames(store.zaddMembers)
+	if !slicesContain(members, "castle") || !slicesContain(members, "2026/post-1") {
+		t.Fatalf("expected adopt members in zadd calls, got %+v", members)
+	}
+}
+
 func TestHandleJSONUpdatePreservesTopicTitleWhenTitleOmitted(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -543,6 +589,32 @@ func TestHandleJSONUpdatePreservesTopicTitleWhenTitleOmitted(t *testing.T) {
 	}
 	if stored.Created != "2022-10-11T01:11:01Z" {
 		t.Fatalf("expected preserved topic created, got %q", stored.Created)
+	}
+}
+
+func TestHandleJSONUpdateTopicAdoptsExistingChildren(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
+		},
+		scanKeys: []string{
+			"surl:anime/orphan",
+			"surl:anime/2026/post-2",
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"path":"anime","type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, true)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	members := zaddMemberNames(store.zaddMembers)
+	if !slicesContain(members, "orphan") || !slicesContain(members, "2026/post-2") {
+		t.Fatalf("expected refresh to adopt existing children, got %+v", members)
 	}
 }
 
@@ -623,6 +695,7 @@ func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
 		getResults: map[string]fakeStringResult{
 			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
 		},
+		scanKeys:     []string{"surl:anime/legacy"},
 		zrangeResult: []redis.Z{{Score: float64(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix()), Member: "castle"}},
 	}
 	handler := newTestHandler(store)
@@ -643,6 +716,10 @@ func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
 	}
 	if store.setKeys[len(store.setKeys)-1] != "surl:anime" {
 		t.Fatalf("expected topic home rebuild, got %+v", store.setKeys)
+	}
+	members := zaddMemberNames(store.zaddMembers)
+	if !slicesContain(members, "legacy") {
+		t.Fatalf("expected topic item sync to adopt orphans, got %+v", members)
 	}
 }
 
@@ -1153,6 +1230,7 @@ func TestHandleDeleteTopicItemUpdatesTopicIndexBeforeResponding(t *testing.T) {
 			"surl:anime":        {value: `{"type":"topic","content":"<html></html>","title":"Anime"}`},
 			"surl:anime/castle": {value: `{"type":"text","content":"hello","title":"Castle","created":"2022-10-11T01:11:01Z"}`},
 		},
+		scanKeys: []string{"surl:anime/orphan"},
 		zrangeResult: []redis.Z{
 			{Score: 0, Member: topicPlaceholderMember},
 		},
@@ -1175,6 +1253,10 @@ func TestHandleDeleteTopicItemUpdatesTopicIndexBeforeResponding(t *testing.T) {
 	}
 	if _, ok := store.getResults["surl:anime/castle"]; ok {
 		t.Fatalf("expected deleted item to be removed from store")
+	}
+	members := zaddMemberNames(store.zaddMembers)
+	if !slicesContain(members, "orphan") {
+		t.Fatalf("expected delete sync to adopt orphan entries, got %+v", members)
 	}
 }
 
@@ -1390,6 +1472,39 @@ func TestHandleFileUploadRollsBackWhenTopicSyncFails(t *testing.T) {
 	if len(fileStore.deleteCalls) != 1 || fileStore.deleteCalls[0] != "post/default/uploaded.txt" {
 		t.Fatalf("expected uploaded object cleanup, got %+v", fileStore.deleteCalls)
 	}
+}
+
+func TestHandleFileUploadTopicSyncAdoptsExistingChildren(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
+		},
+		scanKeys:     []string{"surl:anime/orphan"},
+		zrangeResult: []redis.Z{{Score: 0, Member: topicPlaceholderMember}},
+	}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{"topic": "anime", "path": "note"}, "note.txt", "hello")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	members := zaddMemberNames(store.zaddMembers)
+	if !slicesContain(members, "orphan") {
+		t.Fatalf("expected file upload sync to adopt existing children, got %+v", members)
+	}
+}
+
+func slicesContain(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHandleFileUploadStoresWithoutExpirationWhenTTLIsZero(t *testing.T) {
