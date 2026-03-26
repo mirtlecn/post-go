@@ -1061,8 +1061,8 @@ func TestHandleLookupAuthedFromBodyReturnsWildcardItems(t *testing.T) {
 	store := &fakeRedisStore{
 		scanKeys: []string{"surl:note-a", "surl:note-b", "surl:notes-topic", "surl:other"},
 		getResults: map[string]fakeStringResult{
-			"surl:note-a":     {value: `{"type":"text","content":"hello","title":"A","created":"2022-10-11T01:11:01Z"}`},
-			"surl:note-b":     {value: `{"type":"md","content":"# body","title":"B","created":"2022-10-12T01:11:01Z"}`},
+			"surl:note-a":      {value: `{"type":"text","content":"hello","title":"A","created":"2022-10-11T01:11:01Z"}`},
+			"surl:note-b":      {value: `{"type":"md","content":"# body","title":"B","created":"2022-10-12T01:11:01Z"}`},
 			"surl:notes-topic": {value: `{"type":"topic","content":"<html></html>","title":"skip"}`},
 		},
 		ttlResult: 3 * time.Minute,
@@ -1496,8 +1496,8 @@ func TestHandleDeleteReturnsWildcardDeleteSummary(t *testing.T) {
 	store := &fakeRedisStore{
 		scanKeys: []string{"surl:note-a", "surl:note-b", "surl:notes-topic"},
 		getResults: map[string]fakeStringResult{
-			"surl:note-a":     {value: `{"type":"text","content":"hello","title":"Greeting","created":"2022-10-11T01:11:01Z"}`},
-			"surl:note-b":     {value: `{"type":"md","content":"# body","title":"Doc","created":"2022-10-12T01:11:01Z"}`},
+			"surl:note-a":      {value: `{"type":"text","content":"hello","title":"Greeting","created":"2022-10-11T01:11:01Z"}`},
+			"surl:note-b":      {value: `{"type":"md","content":"# body","title":"Doc","created":"2022-10-12T01:11:01Z"}`},
 			"surl:notes-topic": {value: `{"type":"topic","content":"<html></html>","title":"Topic"}`},
 		},
 	}

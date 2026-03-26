@@ -495,6 +495,32 @@ Special cases:
 - if `type=topic`, delete topic home and topic index only
 - if deleting a topic member, also update the topic zset and rebuilt topic HTML
 - if deleting a file object and S3 is configured, the server tries to delete the object from storage too
+- if `path` ends with a single `*`, delete all matching items and return a summary object
+- wildcard delete returns `200` even when nothing matches
+- topic wildcard delete only matches topic homes and still does not delete topic members
+
+Wildcard delete response shape:
+
+```json
+{
+  "deleted": [
+    {
+      "deleted": "note-a",
+      "type": "text",
+      "title": "",
+      "created": "2026-03-26T00:00:00Z",
+      "content": "hello"
+    }
+  ],
+  "errors": [
+    {
+      "path": "note-b",
+      "code": "internal",
+      "message": "Internal server error"
+    }
+  ]
+}
+```
 
 ### 4.7 Authenticated `GET /`
 
@@ -509,6 +535,13 @@ Three modes:
 3. otherwise: list all stored objects
 
 This is easy to miss if you only read the route table and assume query params.
+
+If `path` ends with a single `*`, lookup becomes a prefix query:
+
+- normal wildcard lookup returns an array of non-topic objects
+- `type=topic` wildcard lookup returns an array of topic homes only
+- wildcard lookup returns `200` with `[]` when nothing matches
+- wildcard lookup keeps the same `ttl` and `x-export` behavior as normal management lookup
 
 ### 4.8 Public `GET /<path>`
 

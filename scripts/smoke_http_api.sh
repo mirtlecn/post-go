@@ -188,6 +188,68 @@ assert_jq '.content == "# Title\n\nHello from Markdown"' "lookup markdown export
 assert_jq '.title == "Markdown Title"' "lookup markdown export title"
 pass "lookup markdown export"
 
+WILDCARD_PREFIX="$SMOKE_PREFIX-wild-note"
+TOPIC_WILDCARD_PREFIX="$SMOKE_PREFIX-wild-topic"
+
+api_json POST "$POST_BASE_URL/" '{"url":"wild-a-content-body","path":"'"$WILDCARD_PREFIX"'-a","title":"Wild A"}'
+assert_status 201 "create wildcard item a"
+api_json POST "$POST_BASE_URL/" '{"url":"wild-b-content-body","path":"'"$WILDCARD_PREFIX"'-b","title":"Wild B"}'
+assert_status 201 "create wildcard item b"
+api_json POST "$POST_BASE_URL/" '{"path":"'"$WILDCARD_PREFIX"'-topic","type":"topic"}'
+assert_status 201 "create wildcard topic home"
+
+api_json GET "$POST_BASE_URL/" '{"path":"'"$WILDCARD_PREFIX"'*"}' yes x-export true
+assert_status 200 "wildcard get items"
+assert_jq 'length == 2' "wildcard get items count"
+assert_jq 'map(.path) | index("'"$WILDCARD_PREFIX"'-a") != null' "wildcard get includes a"
+assert_jq 'map(.path) | index("'"$WILDCARD_PREFIX"'-b") != null' "wildcard get includes b"
+assert_jq 'map(.path) | index("'"$WILDCARD_PREFIX"'-topic") == null' "wildcard get excludes topic home"
+assert_jq 'map(select(.path == "'"$WILDCARD_PREFIX"'-a"))[0].content == "wild-a-content-body"' "wildcard get export content a"
+pass "wildcard get items"
+
+api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'-a","type":"topic","title":"Topic A"}'
+assert_status 201 "create wildcard topic a"
+api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'-b","type":"topic","title":"Topic B"}'
+assert_status 201 "create wildcard topic b"
+api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC_WILDCARD_PREFIX"'-a","path":"entry","url":"topic-a-child","type":"text"}'
+assert_status 201 "create wildcard topic child a"
+api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC_WILDCARD_PREFIX"'-b","path":"entry","url":"topic-b-child","type":"text"}'
+assert_status 201 "create wildcard topic child b"
+
+api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'*","type":"topic"}'
+assert_status 200 "wildcard get topics"
+assert_jq 'length == 2' "wildcard get topics count"
+assert_jq 'map(.path) | index("'"$TOPIC_WILDCARD_PREFIX"'-a") != null' "wildcard get includes topic a"
+assert_jq 'map(.path) | index("'"$TOPIC_WILDCARD_PREFIX"'-b") != null' "wildcard get includes topic b"
+assert_jq 'all(.[]; .type == "topic")' "wildcard get topics type"
+pass "wildcard get topics"
+
+api_json DELETE "$POST_BASE_URL/" '{"path":"'"$WILDCARD_PREFIX"'*"}'
+assert_status 200 "wildcard delete items"
+assert_jq '.errors == []' "wildcard delete items errors"
+assert_jq '.deleted | length == 2' "wildcard delete items count"
+assert_jq '.deleted | map(.deleted) | index("'"$WILDCARD_PREFIX"'-a") != null' "wildcard delete includes a"
+assert_jq '.deleted | map(.deleted) | index("'"$WILDCARD_PREFIX"'-b") != null' "wildcard delete includes b"
+if [[ "$(redis_exists "surl:$WILDCARD_PREFIX-a")" != "0" ]]; then
+  fail "wildcard delete removed item a" "exists: $(redis_exists "surl:$WILDCARD_PREFIX-a")"
+fi
+if [[ "$(redis_exists "surl:$WILDCARD_PREFIX-topic")" != "1" ]]; then
+  fail "wildcard delete keeps topic home" "exists: $(redis_exists "surl:$WILDCARD_PREFIX-topic")"
+fi
+pass "wildcard delete items"
+
+api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'*","type":"topic"}'
+assert_status 200 "wildcard delete topics"
+assert_jq '.errors == []' "wildcard delete topics errors"
+assert_jq '.deleted | length == 2' "wildcard delete topics count"
+assert_jq '.deleted | map(.deleted) | index("'"$TOPIC_WILDCARD_PREFIX"'-a") != null' "wildcard delete includes topic a"
+assert_jq '.deleted | map(.deleted) | index("'"$TOPIC_WILDCARD_PREFIX"'-b") != null' "wildcard delete includes topic b"
+TOPIC_CHILD_A="$(curl -sS "$POST_BASE_URL/$TOPIC_WILDCARD_PREFIX-a/entry")"
+assert_contains "$TOPIC_CHILD_A" "topic-a-child" "wildcard delete topic keeps child a"
+TOPIC_CHILD_B="$(curl -sS "$POST_BASE_URL/$TOPIC_WILDCARD_PREFIX-b/entry")"
+assert_contains "$TOPIC_CHILD_B" "topic-b-child" "wildcard delete topic keeps child b"
+pass "wildcard delete topics"
+
 api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-missing"}'
 assert_status 404 "delete missing"
 assert_jq '.code == "not_found"' "delete missing code"

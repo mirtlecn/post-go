@@ -117,6 +117,8 @@ Operations that typically require authentication: `POST /`, `PUT /`, `DELETE /`,
 
 Public content access uses `GET /<path>` and does not require authentication.
 
+Authenticated management `GET /` and `DELETE /` also support a trailing `*` in `path` for prefix matching.
+
 ---
 
 ## API documentation
