@@ -42,6 +42,16 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
+	if wildcardPrefix, ok := parseWildcardPrefix(pathVal); ok {
+		result, err := h.deleteItemsByPrefix(ctx, rdb, wildcardPrefix, topicVal, typeInfo, isExportRequest(r))
+		if err != nil {
+			requestLogger{}.Errorf("wildcard delete failed: path=%s topic=%s err=%v", pathVal, topicVal, err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
+		utils.JSON(w, http.StatusOK, result)
+		return
+	}
 	result, err := h.deleteItem(ctx, rdb, pathVal, topicVal, typeInfo)
 	if err == errDeleteNotFound {
 		utils.Error(w, http.StatusNotFound, "not_found", "path \""+pathVal+"\" not found", nil, nil)
@@ -57,16 +67,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if result.StoredValue.Type == "file" {
-		conf := h.Cfg.S3Config()
-		if conf.IsConfigured() {
-			if client, err := h.deps.newFileStore(conf); err == nil {
-				if err := client.DeleteObject(ctx, result.StoredValue.Content); err != nil {
-					requestLogger{}.Errorf("s3 delete failed: %s (%v)", result.StoredValue.Content, err)
-				}
-			}
-		}
-	}
+	h.deleteFileObjectBestEffort(ctx, result)
 	writeDeleteResult(w, r, result)
 }
 

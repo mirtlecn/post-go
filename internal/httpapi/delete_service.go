@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"post-go/internal/storage"
@@ -17,6 +18,53 @@ var errDeleteNotFound = errors.New("delete target not found")
 type deleteItemResult struct {
 	Path        string
 	StoredValue storage.StoredValue
+}
+
+func deleteResultResponse(result deleteItemResult, isExport bool) DeleteResponse {
+	return DeleteResponse{
+		Deleted: result.Path,
+		Type:    result.StoredValue.Type,
+		Title:   result.StoredValue.Title,
+		Created: responseCreatedValue(result.StoredValue.Created),
+		Content: responseContent(result.StoredValue.Type, result.StoredValue.Content, isExport),
+	}
+}
+
+func isDeleteValidationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch err.Error() {
+	case topicHomeManagedError, "topic does not exist", "`topic` and `path` must match", "`path` is required", "`path` must not be \"/\" when `topic` is provided", "`path` must not contain empty topic members":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildBulkDeleteError(path string, err error) BulkDeleteError {
+	switch {
+	case err == nil:
+		return BulkDeleteError{Path: path}
+	case err == errDeleteNotFound:
+		return BulkDeleteError{
+			Path:    path,
+			Code:    "not_found",
+			Message: "path \"" + path + "\" not found",
+		}
+	case isDeleteValidationError(err):
+		return BulkDeleteError{
+			Path:    path,
+			Code:    "invalid_request",
+			Message: err.Error(),
+		}
+	default:
+		return BulkDeleteError{
+			Path:    path,
+			Code:    "internal",
+			Message: "Internal server error",
+		}
+	}
 }
 
 func (h *Handler) deleteItem(ctx context.Context, rdb redisStore, pathVal, topicVal string, typeInfo requestTypeInfo) (deleteItemResult, error) {
@@ -129,11 +177,74 @@ func (h *Handler) deleteTopicItem(ctx context.Context, rdb redisStore, resolvedP
 
 func writeDeleteResult(w http.ResponseWriter, r *http.Request, result deleteItemResult) {
 	isExport := isExportRequest(r)
-	utils.JSON(w, http.StatusOK, DeleteResponse{
-		Deleted: result.Path,
-		Type:    result.StoredValue.Type,
-		Title:   result.StoredValue.Title,
-		Created: responseCreatedValue(result.StoredValue.Created),
-		Content: responseContent(result.StoredValue.Type, result.StoredValue.Content, isExport),
-	})
+	utils.JSON(w, http.StatusOK, deleteResultResponse(result, isExport))
+}
+
+func (h *Handler) deleteFileObjectBestEffort(ctx context.Context, result deleteItemResult) {
+	if result.StoredValue.Type != "file" {
+		return
+	}
+	conf := h.Cfg.S3Config()
+	if !conf.IsConfigured() {
+		return
+	}
+	client, err := h.deps.newFileStore(conf)
+	if err != nil {
+		return
+	}
+	if err := client.DeleteObject(ctx, result.StoredValue.Content); err != nil {
+		requestLogger{}.Errorf("s3 delete failed: %s (%v)", result.StoredValue.Content, err)
+	}
+}
+
+func (h *Handler) deleteItemsByPrefix(ctx context.Context, rdb redisStore, prefix, topicVal string, typeInfo requestTypeInfo, isExport bool) (BulkDeleteResponse, error) {
+	response := BulkDeleteResponse{
+		Deleted: []DeleteResponse{},
+		Errors:  []BulkDeleteError{},
+	}
+	if typeInfo.InputType == topicType {
+		topicNames, err := scanTopicNamesByPrefix(ctx, rdb, prefix)
+		if err != nil {
+			return BulkDeleteResponse{}, err
+		}
+		for _, topicName := range topicNames {
+			result, err := h.deleteTopic(ctx, rdb, topicName)
+			if err != nil {
+				if !isDeleteValidationError(err) && err != errDeleteNotFound {
+					requestLogger{}.Errorf("wildcard topic delete failed: path=%s err=%v", topicName, err)
+				}
+				response.Errors = append(response.Errors, buildBulkDeleteError(topicName, err))
+				continue
+			}
+			response.Deleted = append(response.Deleted, deleteResultResponse(result, isExport))
+		}
+		return response, nil
+	}
+
+	keys, err := scanAllKeys(ctx, rdb, storage.LinksPrefix+prefix+"*")
+	if err != nil {
+		return BulkDeleteResponse{}, err
+	}
+	storedValues, err := batchGetStoredValues(ctx, rdb, keys)
+	if err != nil {
+		return BulkDeleteResponse{}, err
+	}
+	for _, key := range keys {
+		path := strings.TrimPrefix(key, storage.LinksPrefix)
+		storedValue, exists := storedValues[key]
+		if !exists || storedValue.Type == topicType {
+			continue
+		}
+		result, err := h.deleteItem(ctx, rdb, path, topicVal, typeInfo)
+		if err != nil {
+			if !isDeleteValidationError(err) && err != errDeleteNotFound {
+				requestLogger{}.Errorf("wildcard delete failed: path=%s topic=%s err=%v", path, topicVal, err)
+			}
+			response.Errors = append(response.Errors, buildBulkDeleteError(path, err))
+			continue
+		}
+		h.deleteFileObjectBestEffort(ctx, result)
+		response.Deleted = append(response.Deleted, deleteResultResponse(result, isExport))
+	}
+	return response, nil
 }

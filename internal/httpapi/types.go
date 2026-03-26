@@ -31,3 +31,14 @@ type DeleteResponse struct {
 	Created string `json:"created"`
 	Content string `json:"content"`
 }
+
+type BulkDeleteError struct {
+	Path    string `json:"path"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type BulkDeleteResponse struct {
+	Deleted []DeleteResponse  `json:"deleted"`
+	Errors  []BulkDeleteError `json:"errors"`
+}

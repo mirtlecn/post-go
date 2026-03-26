@@ -30,6 +30,7 @@ type fakeRedisStore struct {
 	setErrKeys   map[string]error
 	setExErrKeys map[string]error
 	delErr       error
+	delErrKeys   map[string]error
 	unlinkErr    error
 	existsResult int64
 	existsErr    error
@@ -112,6 +113,11 @@ func (f *fakeRedisStore) SetEx(ctx context.Context, key string, value any, expir
 }
 
 func (f *fakeRedisStore) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	for _, key := range keys {
+		if err, ok := f.delErrKeys[key]; ok {
+			return redis.NewIntResult(0, err)
+		}
+	}
 	if f.getResults != nil {
 		for _, key := range keys {
 			delete(f.getResults, key)
@@ -1483,6 +1489,119 @@ func TestHandleDeleteReturnsSuccessAfterRedisDelete(t *testing.T) {
 	}
 	if body.Created != "2022-10-11T01:11:01Z" {
 		t.Fatalf("expected delete created value, got %+v", body)
+	}
+}
+
+func TestHandleDeleteReturnsWildcardDeleteSummary(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note-a", "surl:note-b", "surl:notes-topic"},
+		getResults: map[string]fakeStringResult{
+			"surl:note-a":     {value: `{"type":"text","content":"hello","title":"Greeting","created":"2022-10-11T01:11:01Z"}`},
+			"surl:note-b":     {value: `{"type":"md","content":"# body","title":"Doc","created":"2022-10-12T01:11:01Z"}`},
+			"surl:notes-topic": {value: `{"type":"topic","content":"<html></html>","title":"Topic"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"note*"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body BulkDeleteResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body.Deleted) != 2 || len(body.Errors) != 0 {
+		t.Fatalf("unexpected wildcard delete response: %+v", body)
+	}
+	if body.Deleted[0].Deleted != "note-a" || body.Deleted[1].Deleted != "note-b" {
+		t.Fatalf("unexpected deleted items: %+v", body.Deleted)
+	}
+	if _, ok := store.getResults["surl:note-a"]; ok {
+		t.Fatalf("expected note-a to be deleted")
+	}
+	if _, ok := store.getResults["surl:notes-topic"]; !ok {
+		t.Fatalf("expected topic home to be preserved")
+	}
+}
+
+func TestHandleDeleteWildcardContinuesAfterItemFailure(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note-a", "surl:note-b"},
+		getResults: map[string]fakeStringResult{
+			"surl:note-a": {value: `{"type":"text","content":"hello","created":"2022-10-11T01:11:01Z"}`},
+			"surl:note-b": {value: `{"type":"text","content":"world","created":"2022-10-12T01:11:01Z"}`},
+		},
+		delErrKeys: map[string]error{
+			"surl:note-a": errors.New("delete failed"),
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"note*"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body BulkDeleteResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body.Deleted) != 1 || body.Deleted[0].Deleted != "note-b" {
+		t.Fatalf("expected note-b deleted, got %+v", body)
+	}
+	if len(body.Errors) != 1 || body.Errors[0].Path != "note-a" || body.Errors[0].Code != "internal" {
+		t.Fatalf("expected internal error for note-a, got %+v", body.Errors)
+	}
+	if _, ok := store.getResults["surl:note-a"]; !ok {
+		t.Fatalf("expected failed delete item to remain")
+	}
+}
+
+func TestHandleDeleteReturnsTopicWildcardDeleteSummary(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"topic:anime:items", "topic:animal:items", "topic:blog:items"},
+		getResults: map[string]fakeStringResult{
+			"surl:anime":        {value: `{"type":"topic","content":"<html></html>","title":"Anime","created":"2022-10-11T01:11:01Z"}`},
+			"surl:animal":       {value: `{"type":"topic","content":"<html></html>","title":"Animal","created":"2022-10-12T01:11:01Z"}`},
+			"surl:blog":         {value: `{"type":"topic","content":"<html></html>","title":"Blog","created":"2022-10-13T01:11:01Z"}`},
+			"surl:anime/castle": {value: `{"type":"text","content":"hello"}`},
+			"surl:animal/cat":   {value: `{"type":"text","content":"meow"}`},
+		},
+		zcardResult: 2,
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"ani*","type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body BulkDeleteResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body.Deleted) != 2 || len(body.Errors) != 0 {
+		t.Fatalf("unexpected topic wildcard delete response: %+v", body)
+	}
+	if _, ok := store.getResults["surl:anime/castle"]; !ok {
+		t.Fatalf("expected topic child to remain after topic delete")
+	}
+	if _, ok := store.getResults["topic:anime:items"]; ok {
+		t.Fatalf("expected topic index key to be deleted")
+	}
+	if _, ok := store.getResults["surl:blog"]; !ok {
+		t.Fatalf("expected unmatched topic to remain")
 	}
 }
 
