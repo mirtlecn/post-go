@@ -59,10 +59,14 @@ func buildBulkDeleteError(path string, err error) BulkDeleteError {
 			Message: err.Error(),
 		}
 	default:
+		message := "Internal server error"
+		if err != nil {
+			message = err.Error()
+		}
 		return BulkDeleteError{
 			Path:    path,
 			Code:    "internal",
-			Message: "Internal server error",
+			Message: message,
 		}
 	}
 }

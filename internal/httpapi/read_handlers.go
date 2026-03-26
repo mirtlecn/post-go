@@ -36,7 +36,12 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 		return true
 	}
 	pathVal, _ = normalizePathAndTopic(pathVal, "")
-	if wildcardPrefix, ok := parseWildcardPrefix(pathVal); ok {
+	wildcardPrefix, ok, err := parseWildcardPrefix(pathVal)
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return true
+	}
+	if ok {
 		if typeInfo.InputType == topicType {
 			h.handleTopicWildcardLookupAuthed(w, r, wildcardPrefix)
 			return true

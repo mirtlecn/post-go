@@ -42,7 +42,12 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	if wildcardPrefix, ok := parseWildcardPrefix(pathVal); ok {
+	wildcardPrefix, ok, err := parseWildcardPrefix(pathVal)
+	if err != nil {
+		utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
+		return
+	}
+	if ok {
 		result, err := h.deleteItemsByPrefix(ctx, rdb, wildcardPrefix, topicVal, typeInfo, isExportRequest(r))
 		if err != nil {
 			requestLogger{}.Errorf("wildcard delete failed: path=%s topic=%s err=%v", pathVal, topicVal, err)

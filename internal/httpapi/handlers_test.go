@@ -1154,6 +1154,24 @@ func TestHandleLookupAuthedFromBodyReturnsTopicWildcardList(t *testing.T) {
 	}
 }
 
+func TestHandleLookupAuthedFromBodyRejectsInvalidWildcardPath(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"no*te"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected invalid wildcard lookup to be handled")
+	}
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "invalid_request" || body.Error != "`path` wildcard only supports a single trailing \"*\"" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
 func TestHandleListUsesMGetForStoredValues(t *testing.T) {
 	store := &fakeRedisStore{
 		scanKeys: []string{"surl:note", "surl:anime"},
@@ -1560,8 +1578,28 @@ func TestHandleDeleteWildcardContinuesAfterItemFailure(t *testing.T) {
 	if len(body.Errors) != 1 || body.Errors[0].Path != "note-a" || body.Errors[0].Code != "internal" {
 		t.Fatalf("expected internal error for note-a, got %+v", body.Errors)
 	}
+	if body.Errors[0].Message != "delete failed" {
+		t.Fatalf("expected internal error message to be preserved, got %+v", body.Errors[0])
+	}
 	if _, ok := store.getResults["surl:note-a"]; !ok {
 		t.Fatalf("expected failed delete item to remain")
+	}
+}
+
+func TestHandleDeleteRejectsInvalidWildcardPath(t *testing.T) {
+	handler := newTestHandler(&fakeRedisStore{})
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"no*te"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "invalid_request" || body.Error != "`path` wildcard only supports a single trailing \"*\"" {
+		t.Fatalf("unexpected error payload: %+v", body)
 	}
 }
 

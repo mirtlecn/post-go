@@ -166,14 +166,17 @@ func isExportRequest(r *http.Request) bool {
 	return strings.ToLower(r.Header.Get("x-export")) == "true"
 }
 
-func parseWildcardPrefix(path string) (string, bool) {
-	if !strings.HasSuffix(path, "*") {
-		return "", false
+func parseWildcardPrefix(path string) (string, bool, error) {
+	if !strings.Contains(path, "*") {
+		return path, false, nil
 	}
-	if strings.Count(path, "*") != 1 {
-		return "", false
+	if path == "*" {
+		return "", true, nil
 	}
-	return strings.TrimSuffix(path, "*"), true
+	if !strings.HasSuffix(path, "*") || strings.Count(path, "*") != 1 {
+		return "", false, errors.New("`path` wildcard only supports a single trailing \"*\"")
+	}
+	return strings.TrimSuffix(path, "*"), true, nil
 }
 
 func scanAllKeys(ctx context.Context, rdb redisStore, pattern string) ([]string, error) {
