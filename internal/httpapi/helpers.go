@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -163,6 +164,34 @@ func restoreStoredValueWithTTL(ctx context.Context, rdb redisStore, key, storedV
 
 func isExportRequest(r *http.Request) bool {
 	return strings.ToLower(r.Header.Get("x-export")) == "true"
+}
+
+func parseWildcardPrefix(path string) (string, bool) {
+	if !strings.HasSuffix(path, "*") {
+		return "", false
+	}
+	if strings.Count(path, "*") != 1 {
+		return "", false
+	}
+	return strings.TrimSuffix(path, "*"), true
+}
+
+func scanAllKeys(ctx context.Context, rdb redisStore, pattern string) ([]string, error) {
+	var cursor uint64
+	keys := make([]string, 0)
+	for {
+		foundKeys, nextCursor, err := rdb.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, foundKeys...)
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	sort.Strings(keys)
+	return keys, nil
 }
 
 func responseContent(typ, content string, isExport bool) string {

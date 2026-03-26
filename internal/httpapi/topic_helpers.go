@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -51,6 +52,42 @@ func topicItemsKey(topicName string) string {
 
 func topicNameFromItemsKey(key string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(key, "topic:"), ":items")
+}
+
+func scanTopicNamesByPrefix(ctx context.Context, rdb redisStore, prefix string) ([]string, error) {
+	keys, err := scanAllKeys(ctx, rdb, "topic:"+prefix+"*:items")
+	if err != nil {
+		return nil, err
+	}
+	topicNames := make([]string, 0, len(keys))
+	for _, key := range keys {
+		topicName := topicNameFromItemsKey(key)
+		if topicName == "" {
+			continue
+		}
+		topicNames = append(topicNames, topicName)
+	}
+	sort.Strings(topicNames)
+	return topicNames, nil
+}
+
+func (h *Handler) buildTopicSummaryResponse(ctx context.Context, rdb redisStore, domain, topicName string) (ItemResponse, error) {
+	storedValue, err := h.getTopicStoredValue(ctx, rdb, topicName)
+	if err != nil {
+		return ItemResponse{}, err
+	}
+	count, err := countTopicItems(ctx, rdb, topicName)
+	if err != nil {
+		return ItemResponse{}, err
+	}
+	return ItemResponse{
+		SURL:    domain + "/" + topicName,
+		Path:    topicName,
+		Type:    topicType,
+		Title:   topicDisplayTitle(topicName, storedValue),
+		Created: responseCreatedValue(storedValue.Created),
+		Content: topicCountString(count),
+	}, nil
 }
 
 func (h *Handler) topicExists(ctx context.Context, rdb redisStore, topicName string) (bool, error) {

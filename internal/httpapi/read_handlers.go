@@ -36,6 +36,14 @@ func (h *Handler) handleLookupAuthedFromBody(w http.ResponseWriter, r *http.Requ
 		return true
 	}
 	pathVal, _ = normalizePathAndTopic(pathVal, "")
+	if wildcardPrefix, ok := parseWildcardPrefix(pathVal); ok {
+		if typeInfo.InputType == topicType {
+			h.handleTopicWildcardLookupAuthed(w, r, wildcardPrefix)
+			return true
+		}
+		h.handleWildcardLookupAuthed(w, r, wildcardPrefix)
+		return true
+	}
 	if typeInfo.InputType == topicType {
 		h.handleTopicLookupAuthed(w, r, pathVal)
 		return true
@@ -93,62 +101,85 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	var cursor uint64
-	var keys []string
-	for {
-		foundKeys, nextCursor, err := rdb.Scan(ctx, cursor, "topic:*:items", 100).Result()
-		if err != nil {
-			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
-			return
-		}
-		keys = append(keys, foundKeys...)
-		cursor = nextCursor
-		if cursor == 0 {
-			break
-		}
-	}
-	sort.Strings(keys)
-	topics := make([]ItemResponse, 0, len(keys))
-	domain := storage.GetDomain(r)
-	topicKeys := make([]string, 0, len(keys))
-	topicNames := make([]string, 0, len(keys))
-	for _, key := range keys {
-		topicName := topicNameFromItemsKey(key)
-		if topicName == "" {
-			continue
-		}
-		topicNames = append(topicNames, topicName)
-		topicKeys = append(topicKeys, storage.LinksPrefix+topicName)
-	}
-	storedValues, err := batchGetStoredValues(ctx, rdb, topicKeys)
+	topicNames, err := scanTopicNamesByPrefix(ctx, rdb, "")
 	if err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
+	topics := make([]ItemResponse, 0, len(topicNames))
+	domain := storage.GetDomain(r)
 	for _, topicName := range topicNames {
-		storedValue, exists := storedValues[storage.LinksPrefix+topicName]
-		if !exists {
-			requestLogger{}.Warnf("topic list get missed: %s", topicName)
-			continue
-		}
-		if storedValue.Type != topicType {
-			continue
-		}
-		count, err := countTopicItems(ctx, rdb, topicName)
+		item, err := h.buildTopicSummaryResponse(ctx, rdb, domain, topicName)
 		if err != nil {
-			requestLogger{}.Warnf("topic list count failed: %s (%v)", topicName, err)
+			requestLogger{}.Warnf("topic list build failed: %s (%v)", topicName, err)
 			continue
 		}
-		topics = append(topics, ItemResponse{
-			SURL:    domain + "/" + topicName,
-			Path:    topicName,
-			Type:    topicType,
-			Title:   topicDisplayTitle(topicName, storedValue),
-			Created: responseCreatedValue(storedValue.Created),
-			Content: topicCountString(count),
-		})
+		topics = append(topics, item)
 	}
 	utils.JSON(w, http.StatusOK, topics)
+}
+
+func (h *Handler) handleTopicWildcardLookupAuthed(w http.ResponseWriter, r *http.Request, prefix string) {
+	ctx := context.Background()
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
+	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	topicNames, err := scanTopicNamesByPrefix(ctx, rdb, prefix)
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	topics := make([]ItemResponse, 0, len(topicNames))
+	domain := storage.GetDomain(r)
+	for _, topicName := range topicNames {
+		item, err := h.buildTopicSummaryResponse(ctx, rdb, domain, topicName)
+		if err != nil {
+			requestLogger{}.Warnf("topic wildcard lookup failed: %s (%v)", topicName, err)
+			continue
+		}
+		topics = append(topics, item)
+	}
+	utils.JSON(w, http.StatusOK, topics)
+}
+
+func (h *Handler) handleWildcardLookupAuthed(w http.ResponseWriter, r *http.Request, prefix string) {
+	ctx := context.Background()
+	rdb, err := h.deps.getRedisStore(h.Cfg.RedisURL)
+	if err != nil {
+		requestLogger{}.Errorf("redis connect failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	keys, err := scanAllKeys(ctx, rdb, storage.LinksPrefix+prefix+"*")
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	storedValues, err := batchGetStoredValues(ctx, rdb, keys)
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	items := make([]ItemResponse, 0, len(keys))
+	domain := storage.GetDomain(r)
+	isExport := isExportRequest(r)
+	for _, key := range keys {
+		path := strings.TrimPrefix(key, storage.LinksPrefix)
+		storedValue, exists := storedValues[key]
+		if !exists || storedValue.Type == topicType {
+			continue
+		}
+		ttlDuration, err := rdb.TTL(ctx, key).Result()
+		if err != nil {
+			requestLogger{}.Warnf("wildcard lookup ttl failed: %s (%v)", path, err)
+			continue
+		}
+		items = append(items, buildItemResponse(domain, path, storedValue, ttlMinutesFromDuration(ttlDuration), isExport))
+	}
+	utils.JSON(w, http.StatusOK, items)
 }
 
 func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, path string) {

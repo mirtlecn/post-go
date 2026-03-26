@@ -1040,13 +1040,6 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	if len(body) != 2 {
 		t.Fatalf("expected 2 topics, got %+v", body)
 	}
-	if len(store.mgetCalls) != 1 {
-		t.Fatalf("expected one mget call, got %+v", store.mgetCalls)
-	}
-	expectedMGetKeys := []string{"surl:anime", "surl:blog"}
-	if strings.Join(store.mgetCalls[0], ",") != strings.Join(expectedMGetKeys, ",") {
-		t.Fatalf("expected topic list mget keys %v, got %v", expectedMGetKeys, store.mgetCalls[0])
-	}
 	if body[0].Type != topicType || body[1].Type != topicType {
 		t.Fatalf("unexpected topic list response: %+v", body)
 	}
@@ -1055,6 +1048,103 @@ func TestHandleLookupAuthedFromBodyReturnsTopicList(t *testing.T) {
 	}
 	if body[0].Created != "2022-10-11T01:11:01Z" || body[1].Created != "illegal" {
 		t.Fatalf("expected topic created values, got %+v", body)
+	}
+}
+
+func TestHandleLookupAuthedFromBodyReturnsWildcardItems(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note-a", "surl:note-b", "surl:notes-topic", "surl:other"},
+		getResults: map[string]fakeStringResult{
+			"surl:note-a":     {value: `{"type":"text","content":"hello","title":"A","created":"2022-10-11T01:11:01Z"}`},
+			"surl:note-b":     {value: `{"type":"md","content":"# body","title":"B","created":"2022-10-12T01:11:01Z"}`},
+			"surl:notes-topic": {value: `{"type":"topic","content":"<html></html>","title":"skip"}`},
+		},
+		ttlResult: 3 * time.Minute,
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"note*"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected wildcard lookup to be handled")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body []ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body) != 2 {
+		t.Fatalf("expected 2 wildcard items, got %+v", body)
+	}
+	if body[0].Path != "note-a" || body[1].Path != "note-b" {
+		t.Fatalf("unexpected wildcard items: %+v", body)
+	}
+	if body[0].TTL == nil || *body[0].TTL != 3 {
+		t.Fatalf("expected ttl on wildcard response, got %+v", body[0])
+	}
+}
+
+func TestHandleLookupAuthedFromBodyReturnsWildcardItemsWithExportContent(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note-a"},
+		getResults: map[string]fakeStringResult{
+			"surl:note-a": {value: `{"type":"text","content":"long-content-body","title":"A","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"note*"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("x-export", "true")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected wildcard lookup to be handled")
+	}
+	var body []ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body) != 1 || body[0].Content != "long-content-body" {
+		t.Fatalf("expected exported content, got %+v", body)
+	}
+}
+
+func TestHandleLookupAuthedFromBodyReturnsTopicWildcardList(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"topic:anime:items", "topic:animal:items", "topic:blog:items"},
+		getResults: map[string]fakeStringResult{
+			"surl:anime":  {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
+			"surl:animal": {value: `{"type":"topic","content":"<html></html>","title":"Animal Archive","created":"2022-10-12T01:11:01Z"}`},
+			"surl:blog":   {value: `{"type":"topic","content":"<html></html>","title":"Blog Archive","created":"2022-10-13T01:11:01Z"}`},
+		},
+		zcardResult: 2,
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"ani*","type":"topic"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected topic wildcard lookup to be handled")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body []ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body) != 2 {
+		t.Fatalf("expected 2 topic wildcard items, got %+v", body)
+	}
+	if body[0].Path != "animal" || body[1].Path != "anime" {
+		t.Fatalf("unexpected topic wildcard order: %+v", body)
+	}
+	if body[0].Type != topicType || body[1].Type != topicType {
+		t.Fatalf("expected topic items, got %+v", body)
 	}
 }
 
