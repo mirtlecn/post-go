@@ -13,16 +13,16 @@ SMOKE_PREFIX="smoke-$(date +%s)"
 
 cleanup_http_api_smoke() {
   if [[ -n "${POST_BASE_URL:-}" ]]; then
-    curl -sS -X DELETE \
+    curl -sS -X POST \
       -H "Authorization: Bearer $POST_TOKEN" \
       -H "Content-Type: application/json" \
       -d "{\"path\":\"$SMOKE_PREFIX-file.txt\"}" \
-      "$POST_BASE_URL/" >/dev/null 2>&1 || true
-    curl -sS -X DELETE \
+      "$POST_BASE_URL/delete" >/dev/null 2>&1 || true
+    curl -sS -X POST \
       -H "Authorization: Bearer $POST_TOKEN" \
       -H "Content-Type: application/json" \
       -d "{\"path\":\"$SMOKE_PREFIX-file-zero.txt\"}" \
-      "$POST_BASE_URL/" >/dev/null 2>&1 || true
+      "$POST_BASE_URL/delete" >/dev/null 2>&1 || true
   fi
   redis_flush >/dev/null 2>&1 || true
   cleanup_smoke_tmp
@@ -35,17 +35,17 @@ echo "Using Redis DB=$REDIS_DB"
 
 redis_flush
 
-api_json POST "$POST_BASE_URL/" '{"url":"hello"}' no
+api_json POST "$POST_BASE_URL/create" '{"url":"hello"}' no
 assert_status 401 "unauthorized create"
 assert_jq '.code == "unauthorized"' "unauthorized create code"
 pass "unauthorized create"
 
-api_json POST "$POST_BASE_URL/" '{"url":"hello","path":"'"$SMOKE_PREFIX"' bad"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"hello","path":"'"$SMOKE_PREFIX"' bad"}'
 assert_status 400 "invalid path"
 assert_jq '.code == "invalid_request"' "invalid path code"
 pass "invalid path"
 
-api_json POST "$POST_BASE_URL/" '{"url":"hello","path":"'"$SMOKE_PREFIX"'-text","title":"Greeting Card"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"hello","path":"'"$SMOKE_PREFIX"'-text","title":"Greeting Card"}'
 assert_status 201 "create text"
 assert_jq '.type == "text"' "create text type"
 assert_jq '.path == "'"$SMOKE_PREFIX"'-text"' "create text path"
@@ -59,7 +59,7 @@ assert_contains "$RAW_VALUE" '"content":"hello"' "redis json content"
 assert_contains "$RAW_VALUE" '"title":"Greeting Card"' "redis json title"
 pass "redis json storage"
 
-api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-text"}' yes x-export true
+api_json POST "$POST_BASE_URL/query" '{"path":"'"$SMOKE_PREFIX"'-text"}' yes x-export true
 assert_status 200 "lookup text"
 assert_jq '.content == "hello"' "lookup text export"
 assert_jq '.title == "Greeting Card"' "lookup text title"
@@ -70,7 +70,7 @@ PUBLIC_TEXT="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-text")"
 assert_contains "$PUBLIC_TEXT" "hello" "public text read"
 pass "public text read"
 
-api_json POST "$POST_BASE_URL/" '{"url":"https://example.com/path?q=1","path":"'"$SMOKE_PREFIX"'-link"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"https://example.com/path?q=1","path":"'"$SMOKE_PREFIX"'-link"}'
 assert_status 201 "create url"
 assert_jq '.type == "url"' "create url type"
 assert_jq '.title == ""' "create url empty title"
@@ -80,21 +80,21 @@ REDIRECT_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-link")"
 assert_contains "$REDIRECT_HEADERS" "Location: https://example.com/path?q=1" "public url redirect"
 pass "public url redirect"
 
-api_json POST "$POST_BASE_URL/" '{"url":"example.com/path","path":"'"$SMOKE_PREFIX"'-badurl","type":"url"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"example.com/path","path":"'"$SMOKE_PREFIX"'-badurl","type":"url"}'
 assert_status 400 "reject invalid url"
 assert_jq '.code == "invalid_request"' "reject invalid url code"
 pass "reject invalid url"
 
-api_json POST "$POST_BASE_URL/" '{"url":"alias","path":"'"$SMOKE_PREFIX"'-alias","type":"text","convert":"text"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"alias","path":"'"$SMOKE_PREFIX"'-alias","type":"text","convert":"text"}'
 assert_status 201 "matching type convert alias"
 pass "matching type convert alias"
 
-api_json POST "$POST_BASE_URL/" '{"url":"alias","path":"'"$SMOKE_PREFIX"'-alias-bad","type":"text","convert":"html"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"alias","path":"'"$SMOKE_PREFIX"'-alias-bad","type":"text","convert":"html"}'
 assert_status 400 "mismatched type convert alias"
 assert_jq '.code == "invalid_request"' "mismatched type convert alias code"
 pass "mismatched type convert alias"
 
-api_json POST "$POST_BASE_URL/" '{"url":"# Title\n\nHello from Markdown","path":"'"$SMOKE_PREFIX"'-md","convert":"md2html","title":"Markdown Title"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"# Title\n\nHello from Markdown","path":"'"$SMOKE_PREFIX"'-md","convert":"md2html","title":"Markdown Title"}'
 assert_status 201 "create md2html"
 assert_jq '.type == "md"' "create md2html type"
 assert_jq '.title == "Markdown Title"' "create md2html title"
@@ -110,14 +110,14 @@ EMBEDDED_ASSET_BODY="$(curl -sS -H "Referer: $POST_BASE_URL/$SMOKE_PREFIX-md" "$
 test -n "$EMBEDDED_ASSET_BODY"
 pass "rendered html"
 
-api_json POST "$POST_BASE_URL/" '{"url":"<p>hi</p>","path":"'"$SMOKE_PREFIX"'-html","type":"html"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"<p>hi</p>","path":"'"$SMOKE_PREFIX"'-html","type":"html"}'
 assert_status 201 "create raw html"
 assert_jq '.title == ""' "create raw html empty title"
 RAW_HTML="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-html")"
 assert_contains "$RAW_HTML" "<p>hi</p>" "public html read"
 pass "public html read"
 
-api_json POST "$POST_BASE_URL/" '{"url":"https://example.com/qr","path":"'"$SMOKE_PREFIX"'-qr","convert":"qrcode"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"https://example.com/qr","path":"'"$SMOKE_PREFIX"'-qr","convert":"qrcode"}'
 assert_status 201 "create qrcode"
 assert_jq '.type == "qrcode"' "create qrcode type"
 assert_jq '.title == ""' "create qrcode empty title"
@@ -127,61 +127,61 @@ QR_TEXT="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-qr")"
 assert_contains "$QR_TEXT" "Scan this QR code" "public qrcode text"
 pass "public qrcode text"
 
-api_json POST "$POST_BASE_URL/" '{"url":"first","path":"'"$SMOKE_PREFIX"'-conflict","title":"First Title"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"first","path":"'"$SMOKE_PREFIX"'-conflict","title":"First Title"}'
 assert_status 201 "create conflict seed"
-api_json POST "$POST_BASE_URL/" '{"url":"second","path":"'"$SMOKE_PREFIX"'-conflict"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"second","path":"'"$SMOKE_PREFIX"'-conflict"}'
 assert_status 409 "detect conflict"
 assert_jq '.code == "conflict"' "detect conflict code"
 assert_jq '.details.existing.title == "First Title"' "detect conflict existing title"
 pass "detect conflict"
 
-api_json PUT "$POST_BASE_URL/" '{"url":"updated","path":"'"$SMOKE_PREFIX"'-conflict"}'
+api_json POST "$POST_BASE_URL/update" '{"url":"updated","path":"'"$SMOKE_PREFIX"'-conflict"}'
 assert_status 200 "overwrite existing"
 assert_jq '.overwritten == "first"' "overwrite existing body"
 assert_jq '.title == ""' "overwrite existing empty title"
 assert_jq '.created | type == "string"' "overwrite existing created"
 pass "overwrite existing"
 
-api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl","ttl":0}'
+api_json POST "$POST_BASE_URL/create" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl","ttl":0}'
 assert_status 201 "ttl zero means infinite"
 assert_jq '.ttl == null' "ttl zero means no expiration"
 assert_jq '.title == ""' "ttl zero empty title"
 assert_jq '.warning == null or .warning == ""' "ttl zero no warning"
 pass "ttl zero means infinite"
 
-api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-decimal","ttl":1.5}'
+api_json POST "$POST_BASE_URL/create" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-decimal","ttl":1.5}'
 assert_status 400 "ttl decimal rejected"
 assert_jq '.error == "`ttl` must be a natural number"' "ttl decimal rejected message"
 pass "ttl decimal rejected"
 
-api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-string","ttl":"10"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-string","ttl":"10"}'
 assert_status 400 "ttl string rejected"
 assert_jq '.error == "`ttl` must be a natural number"' "ttl string rejected message"
 pass "ttl string rejected"
 
-api_json POST "$POST_BASE_URL/" '{"url":"https://example.com/topic","path":"'"$SMOKE_PREFIX"'-ttl-live","ttl":3,"type":"url"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"https://example.com/topic","path":"'"$SMOKE_PREFIX"'-ttl-live","ttl":3,"type":"url"}'
 assert_status 201 "ttl positive create"
 assert_jq '.ttl == 3' "ttl positive create body"
 pass "ttl positive create"
 
-api_json POST "$POST_BASE_URL/" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-too-large","ttl":525601}'
+api_json POST "$POST_BASE_URL/create" '{"url":"ttl item","path":"'"$SMOKE_PREFIX"'-ttl-too-large","ttl":525601}'
 assert_status 400 "ttl too large rejected"
 assert_jq '.error == "`ttl` must be between 0 and 525600 minutes"' "ttl too large rejected message"
 pass "ttl too large rejected"
 
-api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-ttl-live"}'
+api_json POST "$POST_BASE_URL/query" '{"path":"'"$SMOKE_PREFIX"'-ttl-live"}'
 assert_status 200 "lookup ttl positive"
 assert_jq '.ttl == 3' "lookup ttl positive body"
 pass "lookup ttl positive"
 
-api_json GET "$POST_BASE_URL/" ''
+api_json POST "$POST_BASE_URL/query" ''
 assert_status 200 "list items"
 assert_jq 'map(.path) | index("'"$SMOKE_PREFIX"'-text") != null' "list includes text item"
 assert_jq 'map(select(.path == "'"$SMOKE_PREFIX"'-text"))[0].title == "Greeting Card"' "list includes title"
 assert_jq 'map(select(.path == "'"$SMOKE_PREFIX"'-text"))[0].created | type == "string"' "list includes created"
 pass "list items"
 
-api_json GET "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-md"}' yes x-export true
+api_json POST "$POST_BASE_URL/query" '{"path":"'"$SMOKE_PREFIX"'-md"}' yes x-export true
 assert_status 200 "lookup markdown export"
 assert_jq '.type == "md"' "lookup markdown export type"
 assert_jq '.content == "# Title\n\nHello from Markdown"' "lookup markdown export body"
@@ -191,14 +191,14 @@ pass "lookup markdown export"
 WILDCARD_PREFIX="$SMOKE_PREFIX-wild-note"
 TOPIC_WILDCARD_PREFIX="$SMOKE_PREFIX-wild-topic"
 
-api_json POST "$POST_BASE_URL/" '{"url":"wild-a-content-body","path":"'"$WILDCARD_PREFIX"'-a","title":"Wild A"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"wild-a-content-body","path":"'"$WILDCARD_PREFIX"'-a","title":"Wild A"}'
 assert_status 201 "create wildcard item a"
-api_json POST "$POST_BASE_URL/" '{"url":"wild-b-content-body","path":"'"$WILDCARD_PREFIX"'-b","title":"Wild B"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"wild-b-content-body","path":"'"$WILDCARD_PREFIX"'-b","title":"Wild B"}'
 assert_status 201 "create wildcard item b"
-api_json POST "$POST_BASE_URL/" '{"path":"'"$WILDCARD_PREFIX"'-topic","type":"topic"}'
+api_json POST "$POST_BASE_URL/create" '{"path":"'"$WILDCARD_PREFIX"'-topic","type":"topic"}'
 assert_status 201 "create wildcard topic home"
 
-api_json GET "$POST_BASE_URL/" '{"path":"'"$WILDCARD_PREFIX"'*"}' yes x-export true
+api_json POST "$POST_BASE_URL/query" '{"path":"'"$WILDCARD_PREFIX"'*"}' yes x-export true
 assert_status 200 "wildcard get items"
 assert_jq 'length == 2' "wildcard get items count"
 assert_jq 'map(.path) | index("'"$WILDCARD_PREFIX"'-a") != null' "wildcard get includes a"
@@ -207,16 +207,16 @@ assert_jq 'map(.path) | index("'"$WILDCARD_PREFIX"'-topic") == null' "wildcard g
 assert_jq 'map(select(.path == "'"$WILDCARD_PREFIX"'-a"))[0].content == "wild-a-content-body"' "wildcard get export content a"
 pass "wildcard get items"
 
-api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'-a","type":"topic","title":"Topic A"}'
+api_json POST "$POST_BASE_URL/create" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'-a","type":"topic","title":"Topic A"}'
 assert_status 201 "create wildcard topic a"
-api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'-b","type":"topic","title":"Topic B"}'
+api_json POST "$POST_BASE_URL/create" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'-b","type":"topic","title":"Topic B"}'
 assert_status 201 "create wildcard topic b"
-api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC_WILDCARD_PREFIX"'-a","path":"entry","url":"topic-a-child","type":"text"}'
+api_json POST "$POST_BASE_URL/create" '{"topic":"'"$TOPIC_WILDCARD_PREFIX"'-a","path":"entry","url":"topic-a-child","type":"text"}'
 assert_status 201 "create wildcard topic child a"
-api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC_WILDCARD_PREFIX"'-b","path":"entry","url":"topic-b-child","type":"text"}'
+api_json POST "$POST_BASE_URL/create" '{"topic":"'"$TOPIC_WILDCARD_PREFIX"'-b","path":"entry","url":"topic-b-child","type":"text"}'
 assert_status 201 "create wildcard topic child b"
 
-api_json GET "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'*","type":"topic"}'
+api_json POST "$POST_BASE_URL/query" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'*","type":"topic"}'
 assert_status 200 "wildcard get topics"
 assert_jq 'length == 2' "wildcard get topics count"
 assert_jq 'map(.path) | index("'"$TOPIC_WILDCARD_PREFIX"'-a") != null' "wildcard get includes topic a"
@@ -224,7 +224,7 @@ assert_jq 'map(.path) | index("'"$TOPIC_WILDCARD_PREFIX"'-b") != null' "wildcard
 assert_jq 'all(.[]; .type == "topic")' "wildcard get topics type"
 pass "wildcard get topics"
 
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$WILDCARD_PREFIX"'*"}'
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$WILDCARD_PREFIX"'*"}'
 assert_status 200 "wildcard delete items"
 assert_jq '.errors == []' "wildcard delete items errors"
 assert_jq '.deleted | length == 2' "wildcard delete items count"
@@ -238,7 +238,7 @@ if [[ "$(redis_exists "surl:$WILDCARD_PREFIX-topic")" != "1" ]]; then
 fi
 pass "wildcard delete items"
 
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'*","type":"topic"}'
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$TOPIC_WILDCARD_PREFIX"'*","type":"topic"}'
 assert_status 200 "wildcard delete topics"
 assert_jq '.errors == []' "wildcard delete topics errors"
 assert_jq '.deleted | length == 2' "wildcard delete topics count"
@@ -250,7 +250,7 @@ TOPIC_CHILD_B="$(curl -sS "$POST_BASE_URL/$TOPIC_WILDCARD_PREFIX-b/entry")"
 assert_contains "$TOPIC_CHILD_B" "topic-b-child" "wildcard delete topic keeps child b"
 pass "wildcard delete topics"
 
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-missing"}'
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$SMOKE_PREFIX"'-missing"}'
 assert_status 404 "delete missing"
 assert_jq '.code == "not_found"' "delete missing code"
 pass "delete missing"
@@ -265,7 +265,7 @@ curl -sS -o "$FILE_BODY" -w "%{http_code}" \
   -F "file=@$FILE_PATH;type=text/plain" \
   -F "path=$SMOKE_PREFIX-file" \
   -F "title=Upload Attachment" \
-  "$POST_BASE_URL/" >"$FILE_STATUS"
+  "$POST_BASE_URL/create" >"$FILE_STATUS"
 FILE_HTTP_STATUS="$(cat "$FILE_STATUS")"
 FILE_HTTP_BODY="$(cat "$FILE_BODY")"
 if [[ "$FILE_HTTP_STATUS" != "201" ]]; then
@@ -289,7 +289,7 @@ curl -sS -o "$FILE_AUTO_BODY" -w "%{http_code}" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -F "file=@$FILE_PATH" \
   -F "path=$SMOKE_PREFIX-file-auto" \
-  "$POST_BASE_URL/" >"$FILE_AUTO_STATUS"
+  "$POST_BASE_URL/create" >"$FILE_AUTO_STATUS"
 FILE_AUTO_HTTP_STATUS="$(cat "$FILE_AUTO_STATUS")"
 FILE_AUTO_HTTP_BODY="$(cat "$FILE_AUTO_BODY")"
 if [[ "$FILE_AUTO_HTTP_STATUS" != "201" ]]; then
@@ -302,7 +302,7 @@ FILE_AUTO_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-file-auto.txt")"
 assert_contains "$FILE_AUTO_HEADERS" "Content-Type: text/plain" "file upload auto content type header"
 FILE_AUTO_PUBLIC_BODY="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file-auto.txt")"
 assert_contains "$FILE_AUTO_PUBLIC_BODY" "upload-body" "file upload auto content type body"
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-file-auto.txt"}'
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$SMOKE_PREFIX"'-file-auto.txt"}'
 assert_status 200 "delete auto content type file"
 assert_jq '.type == "file"' "delete auto content type file type"
 curl -sS -o "$TMP_DIR/file-auto-delete.body" -w "%{http_code}" "$POST_BASE_URL/$SMOKE_PREFIX-file-auto.txt" >"$TMP_DIR/file-auto-delete.status"
@@ -318,7 +318,7 @@ curl -sS -o "$FILE_OCTET_BODY" -w "%{http_code}" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -F "file=@$FILE_PATH;type=application/octet-stream" \
   -F "path=$SMOKE_PREFIX-file-octet" \
-  "$POST_BASE_URL/" >"$FILE_OCTET_STATUS"
+  "$POST_BASE_URL/create" >"$FILE_OCTET_STATUS"
 FILE_OCTET_HTTP_STATUS="$(cat "$FILE_OCTET_STATUS")"
 FILE_OCTET_HTTP_BODY="$(cat "$FILE_OCTET_BODY")"
 if [[ "$FILE_OCTET_HTTP_STATUS" != "201" ]]; then
@@ -328,7 +328,7 @@ FILE_OCTET_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-file-octet.txt")"
 assert_contains "$FILE_OCTET_HEADERS" "Content-Type: text/plain; charset=utf-8" "file upload octet stream repair header"
 FILE_OCTET_PUBLIC_BODY="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file-octet.txt")"
 assert_contains "$FILE_OCTET_PUBLIC_BODY" "upload-body" "file upload octet stream repair body"
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-file-octet.txt"}'
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$SMOKE_PREFIX"'-file-octet.txt"}'
 assert_status 200 "delete octet stream repair file"
 assert_jq '.type == "file"' "delete octet stream repair file type"
 curl -sS -o "$TMP_DIR/file-octet-delete.body" -w "%{http_code}" "$POST_BASE_URL/$SMOKE_PREFIX-file-octet.txt" >"$TMP_DIR/file-octet-delete.status"
@@ -345,7 +345,7 @@ curl -sS -o "$FILE_ZERO_BODY" -w "%{http_code}" \
   -F "file=@$FILE_PATH;type=text/plain" \
   -F "path=$SMOKE_PREFIX-file-zero" \
   -F "ttl=0" \
-  "$POST_BASE_URL/" >"$FILE_ZERO_STATUS"
+  "$POST_BASE_URL/create" >"$FILE_ZERO_STATUS"
 FILE_ZERO_HTTP_STATUS="$(cat "$FILE_ZERO_STATUS")"
 FILE_ZERO_HTTP_BODY="$(cat "$FILE_ZERO_BODY")"
 if [[ "$FILE_ZERO_HTTP_STATUS" != "201" ]]; then
@@ -367,7 +367,7 @@ curl -sS -o "$FILE_BAD_TTL_BODY" -w "%{http_code}" \
   -F "file=@$FILE_PATH;type=text/plain" \
   -F "path=$SMOKE_PREFIX-file-bad-ttl" \
   -F "ttl=1.5" \
-  "$POST_BASE_URL/" >"$FILE_BAD_TTL_STATUS"
+  "$POST_BASE_URL/create" >"$FILE_BAD_TTL_STATUS"
 if [[ "$(cat "$FILE_BAD_TTL_STATUS")" != "400" ]]; then
   fail "file upload bad ttl" "body: $(cat "$FILE_BAD_TTL_BODY")"
 fi
@@ -384,7 +384,7 @@ curl -sS -o "$FILE_TOO_LARGE_TTL_BODY" -w "%{http_code}" \
   -F "file=@$FILE_PATH;type=text/plain" \
   -F "path=$SMOKE_PREFIX-file-too-large-ttl" \
   -F "ttl=525601" \
-  "$POST_BASE_URL/" >"$FILE_TOO_LARGE_TTL_STATUS"
+  "$POST_BASE_URL/create" >"$FILE_TOO_LARGE_TTL_STATUS"
 if [[ "$(cat "$FILE_TOO_LARGE_TTL_STATUS")" != "400" ]]; then
   fail "file upload ttl too large" "body: $(cat "$FILE_TOO_LARGE_TTL_BODY")"
 fi
@@ -403,13 +403,13 @@ curl -sS -o "$MISSING_FILE_BODY" -w "%{http_code}" \
   -X POST \
   -H "Authorization: Bearer $POST_TOKEN" \
   -F "path=$SMOKE_PREFIX-missing-file" \
-  "$POST_BASE_URL/" >"$MISSING_FILE_STATUS"
+  "$POST_BASE_URL/create" >"$MISSING_FILE_STATUS"
 if [[ "$(cat "$MISSING_FILE_STATUS")" != "400" ]]; then
   fail "missing file field" "body: $(cat "$MISSING_FILE_BODY")"
 fi
 pass "missing file field"
 
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$SMOKE_PREFIX"'-conflict"}' yes x-export true
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$SMOKE_PREFIX"'-conflict"}' yes x-export true
 assert_status 200 "delete existing"
 assert_jq '.deleted == "'"$SMOKE_PREFIX"'-conflict"' "delete existing path"
 assert_jq '.content == "updated"' "delete existing content"

@@ -25,13 +25,13 @@ That object can be:
 - a QR code
 - a topic index page
 
-The server does not separate "admin route", "public route", and "frontend app" in the usual way. Instead:
+The server keeps public content paths simple and uses top-level POST action paths for management:
 
 - `GET /<path>` is the public read path
-- `POST /`, `PUT /`, `DELETE /`, `GET /` are the authenticated management API
+- `POST /create`, `POST /update`, `POST /delete`, and `POST /query` are the authenticated management API
 - frontend pages are mostly server-rendered HTML
 
-This unified path model is the most important thing to understand before reading the rest.
+This route model is the most important thing to understand before reading the rest.
 
 ## 2. Start, Test, Dependencies, and Debugging
 
@@ -386,15 +386,21 @@ The root router is in `internal/httpapi/router.go`.
 
 `/` behavior:
 
-- `POST /`: authenticated create
-- `PUT /`: authenticated upsert
-- `DELETE /`: authenticated delete
-- `GET /`: authenticated management API, otherwise public lookup of path `/`
+- `GET /`: public lookup of path `/`
+- other methods: method not allowed
 
-`/<path>` behavior:
+Top-level management action behavior:
+
+- `POST /create`: authenticated create
+- `POST /update`: authenticated upsert
+- `POST /delete`: authenticated delete
+- `POST /query`: authenticated management query
+
+`/<path>` public behavior:
 
 - if reserved embedded asset path, serve asset
 - otherwise do public content lookup
+- action names such as `/query` and `/create` can still be public content paths when read with `GET`
 
 ### 4.2 Authentication model
 
@@ -406,10 +412,10 @@ Authorization: Bearer <SECRET_KEY>
 
 It is used only for:
 
-- `POST /`
-- `PUT /`
-- `DELETE /`
-- management `GET /`
+- `POST /create`
+- `POST /update`
+- `POST /delete`
+- `POST /query`
 
 Public `GET /<path>` needs no authentication.
 
@@ -458,22 +464,22 @@ Path rules:
 
 If `path` is omitted for normal `POST`, the server generates a 5-character short path.
 
-### 4.4 `POST /`
+### 4.4 `POST /create`
 
-`POST /` means create only.
+`POST /create` means create only.
 
 If path already exists:
 
 - response is `409 conflict`
-- hint is `Use PUT to overwrite`
+- hint is `Use POST /update to overwrite`
 
 If creation succeeds:
 
 - response is `201`
 
-### 4.5 `PUT /`
+### 4.5 `POST /update`
 
-`PUT /` means upsert.
+`POST /update` means upsert.
 
 Behavior:
 
@@ -486,7 +492,7 @@ If the target already exists and `created` is not explicitly provided:
 
 This matters if your app uses `created` for sorting or topic ordering.
 
-### 4.6 `DELETE /`
+### 4.6 `POST /delete`
 
 Delete uses JSON body and requires `path`.
 
@@ -522,11 +528,11 @@ Wildcard delete response shape:
 }
 ```
 
-### 4.7 Authenticated `GET /`
+### 4.7 Authenticated `POST /query`
 
 This is a management API, not a public content route.
 
-It supports JSON request body, which is unusual for `GET`.
+It supports JSON request body.
 
 Three modes:
 

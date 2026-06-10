@@ -2304,6 +2304,197 @@ func TestHandleFileUploadReturnsMainFailureWhenCompensationFails(t *testing.T) {
 	}
 }
 
+func TestServeHTTPRoutesPostActionPaths(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		body       string
+		store      *fakeRedisStore
+		wantStatus int
+	}{
+		{
+			name:       "create",
+			path:       "/create",
+			body:       `{"url":"hello","path":"note"}`,
+			store:      &fakeRedisStore{},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:       "update",
+			path:       "/update",
+			body:       `{"url":"updated","path":"note"}`,
+			store:      &fakeRedisStore{},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name: "/query",
+			path: "/query",
+			body: `{"path":"note"}`,
+			store: &fakeRedisStore{
+				getResults: map[string]fakeStringResult{
+					"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting","created":"2022-10-11T01:11:01Z"}`},
+				},
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "/delete",
+			path: "/delete",
+			body: `{"path":"note"}`,
+			store: &fakeRedisStore{
+				getResults: map[string]fakeStringResult{
+					"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting","created":"2022-10-11T01:11:01Z"}`},
+				},
+			},
+			wantStatus: http.StatusOK,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := newTestHandler(test.store)
+			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer secret")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != test.wantStatus {
+				t.Fatalf("expected status %d, got %d, body: %s", test.wantStatus, response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestServeHTTPPostActionRequiresValidAuthAndDoesNotFallBackToPublicContent(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:query": {value: `{"type":"text","content":"public query","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"path":"note"}`))
+	request.Header.Set("Authorization", "Bearer wrong")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d, body: %s", response.Code, response.Body.String())
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "unauthorized" {
+		t.Fatalf("expected unauthorized error code, got %+v", body)
+	}
+}
+
+func TestServeHTTPGetActionPathReadsPublicContentEvenWithAuth(t *testing.T) {
+	tests := []struct {
+		name       string
+		authHeader string
+	}{
+		{name: "without auth"},
+		{name: "with auth", authHeader: "Bearer secret"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeRedisStore{
+				getResults: map[string]fakeStringResult{
+					"surl:query": {value: `{"type":"text","content":"public query","created":"2022-10-11T01:11:01Z"}`},
+				},
+			}
+			handler := newTestHandler(store)
+			request := httptest.NewRequest(http.MethodGet, "/query", strings.NewReader(`{"path":"note"}`))
+			if test.authHeader != "" {
+				request.Header.Set("Authorization", test.authHeader)
+			}
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+			}
+			if strings.TrimSpace(response.Body.String()) != "public query" {
+				t.Fatalf("expected public content, got %q", response.Body.String())
+			}
+		})
+	}
+}
+
+func TestServeHTTPRootManagementEndpointsAreRemoved(t *testing.T) {
+	tests := []struct {
+		method string
+		body   string
+	}{
+		{method: http.MethodPost, body: `{"url":"hello","path":"note"}`},
+		{method: http.MethodPut, body: `{"url":"updated","path":"note"}`},
+		{method: http.MethodDelete, body: `{"path":"note"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.method, func(t *testing.T) {
+			store := &fakeRedisStore{}
+			handler := newTestHandler(store)
+			request := httptest.NewRequest(test.method, "/", strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer secret")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("expected status 405, got %d, body: %s", response.Code, response.Body.String())
+			}
+			if store.lastSetKey != "" {
+				t.Fatalf("expected no write through removed root endpoint, got %q", store.lastSetKey)
+			}
+		})
+	}
+}
+
+func TestServeHTTPRootGetWithAuthNoLongerRunsManagementQuery(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"note"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected public root lookup status 404, got %d, body: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestServeHTTPUpdateFileUploadRequiresPath(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.txt"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequest(t, http.MethodPost, map[string]string{}, "note.txt", "hello")
+	request.URL.Path = "/update"
+	request.Header.Set("Authorization", "Bearer secret")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d, body: %s", response.Code, response.Body.String())
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Error != "`path` is required for update requests" {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+	if len(fileStore.deleteCalls) != 0 {
+		t.Fatalf("expected no uploaded object cleanup because upload should not start, got %+v", fileStore.deleteCalls)
+	}
+}
+
 func newTestHandler(store redisStore) *Handler {
 	return newTestHandlerWithDeps(store, &fakeFileStore{})
 }

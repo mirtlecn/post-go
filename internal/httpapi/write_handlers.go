@@ -223,7 +223,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 		details := map[string]any{
 			"existing": buildItemResponse(storage.GetDomain(r), pathVal, existingValue, nil, isExport),
 		}
-		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use PUT to overwrite", details)
+		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use POST /update to overwrite", details)
 		return
 	}
 	if existing != "" && allowOverwrite {
@@ -311,7 +311,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		return
 	}
 	if existing != "" && !allowOverwrite {
-		utils.Error(w, http.StatusConflict, "conflict", "path \""+topicName+"\" already exists", "Use PUT to overwrite", nil)
+		utils.Error(w, http.StatusConflict, "conflict", "path \""+topicName+"\" already exists", "Use POST /update to overwrite", nil)
 		return
 	}
 	topicTitle := resolveTopicTitle(topicName, titleVal)

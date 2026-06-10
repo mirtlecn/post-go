@@ -24,7 +24,7 @@ echo "Using Redis DB=$REDIS_DB"
 
 redis_flush
 
-api_json POST "$POST_BASE_URL/" '{"url":"hello redis","path":"'"$SMOKE_PREFIX"'-text","title":"Redis Title","ttl":0}'
+api_json POST "$POST_BASE_URL/create" '{"url":"hello redis","path":"'"$SMOKE_PREFIX"'-text","title":"Redis Title","ttl":0}'
 assert_status 201 "create text ttl zero"
 assert_jq '.ttl == null' "create text ttl zero response"
 TEXT_VALUE="$(redis_get "surl:$SMOKE_PREFIX-text")"
@@ -37,7 +37,7 @@ if [[ "$TEXT_TTL" != "-1" ]]; then
 fi
 pass "redis text storage"
 
-api_json POST "$POST_BASE_URL/" '{"url":"expiring","path":"'"$SMOKE_PREFIX"'-ttl","ttl":5}'
+api_json POST "$POST_BASE_URL/create" '{"url":"expiring","path":"'"$SMOKE_PREFIX"'-ttl","ttl":5}'
 assert_status 201 "create ttl item"
 assert_jq '.ttl == 5' "create ttl item response"
 TTL_SECONDS="$(redis_ttl "surl:$SMOKE_PREFIX-ttl")"
@@ -46,7 +46,7 @@ if [[ "$TTL_SECONDS" -le 0 || "$TTL_SECONDS" -gt 300 ]]; then
 fi
 pass "redis ttl storage"
 
-api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
+api_json POST "$POST_BASE_URL/create" '{"path":"'"$TOPIC"'","type":"topic"}'
 assert_status 201 "create topic"
 TOPIC_VALUE="$(redis_get "surl:$TOPIC")"
 if ! jq -e '.type == "topic"' >/dev/null <<<"$TOPIC_VALUE"; then
@@ -60,7 +60,7 @@ if [[ "$(redis_zcard "topic:$TOPIC:items")" != "1" ]]; then
 fi
 pass "redis topic init"
 
-api_json POST "$POST_BASE_URL/" '{"topic":"'"$TOPIC"'","path":"entry","url":"# Entry\n\nHello","type":"md2html","title":"Entry Title"}'
+api_json POST "$POST_BASE_URL/create" '{"topic":"'"$TOPIC"'","path":"entry","url":"# Entry\n\nHello","type":"md2html","title":"Entry Title"}'
 assert_status 201 "create topic item"
 ITEM_VALUE="$(redis_get "surl:$TOPIC/entry")"
 if ! jq -e '.type == "md" and .title == "Entry Title" and .content == "# Entry\n\nHello"' >/dev/null <<<"$ITEM_VALUE"; then
@@ -82,7 +82,7 @@ fi
 pass "redis topic item create"
 
 sleep 1
-api_json PUT "$POST_BASE_URL/" '{"topic":"'"$TOPIC"'","path":"entry","url":"# Entry\n\nUpdated","type":"md2html","title":"Entry Title 2"}'
+api_json POST "$POST_BASE_URL/update" '{"topic":"'"$TOPIC"'","path":"entry","url":"# Entry\n\nUpdated","type":"md2html","title":"Entry Title 2"}'
 assert_status 200 "update topic item"
 ITEM_VALUE="$(redis_get "surl:$TOPIC/entry")"
 if ! jq -e '.type == "md" and .title == "Entry Title 2" and .content == "# Entry\n\nUpdated"' >/dev/null <<<"$ITEM_VALUE"; then
@@ -94,7 +94,7 @@ if [[ -z "$SCORE_AFTER" || "$SCORE_AFTER" -le "$SCORE_BEFORE" ]]; then
 fi
 pass "redis topic item update"
 
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/entry"}'
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$TOPIC"'/entry"}'
 assert_status 200 "delete topic item"
 if [[ "$(redis_exists "surl:$TOPIC/entry")" != "0" ]]; then
   fail "redis topic item delete key" "exists: $(redis_exists "surl:$TOPIC/entry")"
@@ -104,12 +104,12 @@ if [[ "$(redis_zcard "topic:$TOPIC:items")" != "1" ]]; then
 fi
 pass "redis topic item delete"
 
-api_json POST "$POST_BASE_URL/" '{"path":"'"$TOPIC"'/orphan","url":"hello orphan","type":"text"}'
+api_json POST "$POST_BASE_URL/create" '{"path":"'"$TOPIC"'/orphan","url":"hello orphan","type":"text"}'
 assert_status 201 "create orphan candidate"
 if [[ "$(redis_zcard "topic:$TOPIC:items")" != "2" ]]; then
   fail "redis orphan candidate indexed" "zcard: $(redis_zcard "topic:$TOPIC:items")"
 fi
-api_json DELETE "$POST_BASE_URL/" '{"path":"'"$TOPIC"'","type":"topic"}'
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$TOPIC"'","type":"topic"}'
 assert_status 200 "delete topic"
 if [[ "$(redis_exists "surl:$TOPIC")" != "0" ]]; then
   fail "redis topic home delete" "exists: $(redis_exists "surl:$TOPIC")"

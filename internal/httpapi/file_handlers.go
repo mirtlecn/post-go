@@ -49,9 +49,9 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 		return
 	}
 
-	if r.Method == http.MethodPut && pathVal == "" {
-		requestLogger{}.Warnf("file upload PUT missing path")
-		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required for PUT requests", nil, nil)
+	if allowOverwrite && pathVal == "" {
+		requestLogger{}.Warnf("file upload update missing path")
+		utils.Error(w, http.StatusBadRequest, "invalid_request", "`path` is required for update requests", nil, nil)
 		return
 	}
 
@@ -113,7 +113,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 	if existing != "" && !allowOverwrite {
 		requestLogger{}.Warnf("conflict on path: %s", pathVal)
-		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use PUT to overwrite", nil)
+		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use POST /update to overwrite", nil)
 		return
 	}
 	if existing != "" && allowOverwrite {

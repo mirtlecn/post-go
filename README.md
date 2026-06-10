@@ -65,7 +65,7 @@ export POST_TOKEN="your-secret-key"
 ### Create a text item
 
 ```bash
-curl -X POST "$POST_BASE_URL/" \
+curl -X POST "$POST_BASE_URL/create" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -82,7 +82,7 @@ Then open:
 ### Create a short link
 
 ```bash
-curl -X POST "$POST_BASE_URL/" \
+curl -X POST "$POST_BASE_URL/create" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -97,7 +97,7 @@ Accessing `/openai` returns a `302` redirect to the target URL.
 ### Upload a file
 
 ```bash
-curl -X POST "$POST_BASE_URL/" \
+curl -X POST "$POST_BASE_URL/create" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -F "path=manual" \
   -F "file=@./manual.pdf"
@@ -113,11 +113,11 @@ Write operations require:
 Authorization: Bearer <SECRET_KEY>
 ```
 
-Operations that typically require authentication: `POST /`, `PUT /`, `DELETE /`, `GET /` (management query).
+Operations that require authentication: `POST /create`, `POST /update`, `POST /delete`, and `POST /query`.
 
 Public content access uses `GET /<path>` and does not require authentication.
 
-Authenticated management `GET /` and `DELETE /` also support a trailing `*` in `path` for prefix matching.
+Authenticated management `POST /query` and `POST /delete` also support a trailing `*` in `path` for prefix matching.
 
 ---
 

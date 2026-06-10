@@ -33,6 +33,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.Infof("request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 	logger.Debugf("headers: ua=%q content-type=%q xff=%q", r.Header.Get("User-Agent"), r.Header.Get("Content-Type"), r.Header.Get("X-Forwarded-For"))
 	defer logRequestDone(logger, r, rec, started)
+	if h.handleAction(rec, r) {
+		return
+	}
 	if r.URL.Path == "/" {
 		h.handleRoot(rec, r)
 		return
@@ -42,38 +45,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
-	case http.MethodPost:
-		if !core.IsAuthenticated(r, h.Cfg.SecretKey) {
-			requestLogger{}.Warnf("auth failed: POST / from %s", r.RemoteAddr)
-			utils.Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil, nil)
-			return
-		}
-		h.handleCreate(w, r, false)
-		return
-	case http.MethodPut:
-		if !core.IsAuthenticated(r, h.Cfg.SecretKey) {
-			requestLogger{}.Warnf("auth failed: PUT / from %s", r.RemoteAddr)
-			utils.Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil, nil)
-			return
-		}
-		h.handleCreate(w, r, true)
-		return
-	case http.MethodDelete:
-		if !core.IsAuthenticated(r, h.Cfg.SecretKey) {
-			requestLogger{}.Warnf("auth failed: DELETE / from %s", r.RemoteAddr)
-			utils.Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil, nil)
-			return
-		}
-		h.handleDelete(w, r)
-		return
 	case http.MethodGet:
-		if core.IsAuthenticated(r, h.Cfg.SecretKey) {
-			if h.handleLookupAuthedFromBody(w, r) {
-				return
-			}
-			h.handleList(w, r)
-			return
-		}
 		h.handleLookup(w, r, "/")
 		return
 	default:
@@ -81,6 +53,39 @@ func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", nil, nil)
 		return
 	}
+}
+
+func (h *Handler) handleAction(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	switch r.URL.Path {
+	case "/query":
+	case "/create":
+	case "/update":
+	case "/delete":
+	default:
+		return false
+	}
+	if !core.IsAuthenticated(r, h.Cfg.SecretKey) {
+		requestLogger{}.Warnf("auth failed: POST %s from %s", r.URL.Path, r.RemoteAddr)
+		utils.Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil, nil)
+		return true
+	}
+	switch r.URL.Path {
+	case "/query":
+		if h.handleLookupAuthedFromBody(w, r) {
+			return true
+		}
+		h.handleList(w, r)
+	case "/create":
+		h.handleCreate(w, r, false)
+	case "/update":
+		h.handleCreate(w, r, true)
+	case "/delete":
+		h.handleDelete(w, r)
+	}
+	return true
 }
 
 func (h *Handler) handlePath(w http.ResponseWriter, r *http.Request) {

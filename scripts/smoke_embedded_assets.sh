@@ -52,7 +52,7 @@ if [[ "$(cat "$RESERVED_DELETE_STATUS")" != "405" ]]; then
 fi
 pass "reserved asset delete method"
 
-api_json POST "$POST_BASE_URL/" '{"url":"hello","path":"'"$RESERVED_INPUT_PATH"'","type":"text"}'
+api_json POST "$POST_BASE_URL/create" '{"url":"hello","path":"'"$RESERVED_INPUT_PATH"'","type":"text"}'
 assert_status 400 "reserved asset create rejected"
 assert_jq '.code == "invalid_request"' "reserved asset create code"
 pass "reserved asset create rejected"
