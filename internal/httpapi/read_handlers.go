@@ -234,7 +234,15 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		return
 	case topicType:
 		w.Header().Set("Cache-Control", topicCacheControl)
-		utils.HTML(w, http.StatusOK, storedValue.Content, true)
+		html, err := convert.ConvertMarkdownToHTMLWithOptions(storedValue.Content, convert.MarkdownOptions{
+			PageTitle: topicDisplayTitle(path, storedValue),
+		})
+		if err != nil {
+			requestLogger{}.Errorf("topic render failed: %s (%v)", path, err)
+			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+			return
+		}
+		utils.HTML(w, http.StatusOK, html, true)
 		return
 	case "html":
 		utils.HTML(w, http.StatusOK, storedValue.Content, true)

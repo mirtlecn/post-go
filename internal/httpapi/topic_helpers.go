@@ -267,13 +267,10 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 			return err
 		}
 	}
-	html, err := topic.RenderIndexHTML(topicName, topicTitle, indexItems)
-	if err != nil {
-		return err
-	}
+	markdown := topic.BuildIndexMarkdown(topicName, topicTitle, indexItems)
 	return rdb.Set(ctx, storage.LinksPrefix+topicName, storage.BuildStoredValue(storage.StoredValue{
 		Type:    topicType,
-		Content: html,
+		Content: markdown,
 		Title:   topicTitle,
 		Created: topicStoredValue.Created,
 	}), 0).Err()

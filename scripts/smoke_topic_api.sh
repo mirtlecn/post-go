@@ -42,6 +42,10 @@ pass "create topic via alias"
 TOPIC_RAW="$(redis_get "surl:$TOPIC")"
 assert_contains "$TOPIC_RAW" '"type":"topic"' "topic stored type"
 pass "topic stored type"
+if ! jq -e '.content | contains("<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>") and contains("<span style=\"color: #666;\">Home</span>") and (contains("<html") | not) and (contains("<body") | not) and (contains("post-footer") | not)' >/dev/null <<<"$TOPIC_RAW"; then
+  fail "topic stored markdown" "value: $TOPIC_RAW"
+fi
+pass "topic stored markdown"
 
 if [[ "$(redis_type "topic:$TOPIC:items")" != "zset" ]]; then
   fail "topic items key exists" "type: $(redis_type "topic:$TOPIC:items")"
@@ -144,6 +148,12 @@ api_json POST "$POST_BASE_URL/query" '{"path":"'"$TOPIC"'","type":"topic"}'
 assert_status 200 "topic lookup after title update"
 assert_jq '.title == "Anime Notes"' "topic lookup after title update body"
 pass "topic lookup after title update"
+
+TOPIC_RAW="$(redis_get "surl:$TOPIC")"
+if ! jq -e '.content | contains("<div style=\"font-size: 1.3em; font-weight: bold\">Anime Notes</div>") and contains("[Castle Notes](</'"$TOPIC"'/castle-notes>)") and contains("[screening-signup](</'"$TOPIC"'/screening-signup>) ↗") and contains("[Asset File](</'"$TOPIC"'/asset.txt>) ◫") and (contains("<html") | not) and (contains("<body") | not) and (contains("post-footer") | not)' >/dev/null <<<"$TOPIC_RAW"; then
+  fail "topic rebuilt stored markdown" "value: $TOPIC_RAW"
+fi
+pass "topic rebuilt stored markdown"
 
 TOPIC_HOME="$(curl -sS "$POST_BASE_URL/$TOPIC")"
 assert_contains "$TOPIC_HOME" "<title>Anime Notes</title>" "topic home updated title"

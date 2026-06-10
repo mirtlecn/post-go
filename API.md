@@ -257,7 +257,7 @@ A topic is not a separate table or service. It is a combination of:
 
 1. one main object at `surl:<topic>`
 2. one sorted set at `topic:<topic>:items`
-3. one regenerated HTML index page stored back into `surl:<topic>`
+3. one regenerated Markdown index stored back into `surl:<topic>`
 
 Example:
 
@@ -283,6 +283,19 @@ __topic_placeholder__
 
 This keeps the zset alive even when the topic has no real members.
 
+The topic home object stores Markdown in `content`, not a full HTML page:
+
+```json
+{
+  "type": "topic",
+  "content": "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>\n\n<span style=\"color: #666;\">Home</span>\n\n\n\n\n\n\n- [Castle Notes](</anime/castle-notes>) 2026-12-23\n",
+  "title": "Anime Archive",
+  "created": "2026-06-11T10:00:00Z"
+}
+```
+
+The stored Markdown intentionally does not include `<html>`, `<head>`, `<body>`, scripts, stylesheets, or `<footer class="markdown-body post-footer">`. Those are generated when the public topic page is read.
+
 ### 3.5 How topic write flows work
 
 When you create or update a topic member:
@@ -291,8 +304,8 @@ When you create or update a topic member:
 2. `ZADD topic:<topic>:items <member>`
 3. scan existing keys matching `surl:<topic>/*` and adopt them into `topic:<topic>:items`
 4. ensure placeholder member exists
-5. rebuild topic index HTML
-6. write rebuilt HTML back to `surl:<topic>`
+5. rebuild topic index Markdown
+6. write rebuilt Markdown back to `surl:<topic>`
 
 When you delete a topic member:
 
@@ -300,7 +313,7 @@ When you delete a topic member:
 2. `ZREM topic:<topic>:items <member>`
 3. scan existing keys matching `surl:<topic>/*` and adopt them into `topic:<topic>:items`
 4. ensure placeholder member exists
-5. rebuild topic index HTML
+5. rebuild topic index Markdown
 
 When you create a topic home:
 
@@ -308,11 +321,11 @@ When you create a topic home:
 2. scan existing keys matching `surl:<topic>/*`
 3. adopt them into `topic:<topic>:items`
 4. ensure placeholder member exists
-5. rebuild topic HTML
+5. rebuild topic index Markdown
 
 This means a topic can "adopt" old paths that already existed before the topic home was created.
 
-When you refresh a topic home with `POST /update` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching paths into `topic:<topic>:items`, ensures the placeholder member exists, and rebuilds the topic HTML.
+When you refresh a topic home with `POST /update` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching paths into `topic:<topic>:items`, ensures the placeholder member exists, and rebuilds the topic index Markdown.
 
 ### 3.6 Topic delete semantics
 
@@ -502,7 +515,7 @@ Delete uses JSON body and requires `path`.
 Special cases:
 
 - if `type=topic`, delete topic home and topic index only
-- if deleting a topic member, also update the topic zset and rebuilt topic HTML
+- if deleting a topic member, also update the topic zset and rebuilt topic Markdown
 - if deleting a file object and S3 is configured, the server tries to delete the object from storage too
 - if `path` ends with a single `*`, delete all matching items and return a summary object
 - wildcard delete returns `200` even when nothing matches
@@ -760,7 +773,7 @@ Public display behavior:
 - `url`: browser redirect
 - `html`: raw HTML response
 - `md`: rendered HTML page
-- `topic`: prebuilt HTML page from Redis
+- `topic`: Markdown index from Redis, rendered to HTML at read time
 - `qrcode`: terminal-style text QR code
 - `file`: raw file response
 - `text`: plain text
@@ -771,20 +784,21 @@ So "frontend behavior" is actually distributed across content types instead of b
 
 Topic page generation is in `internal/topic/render.go`.
 
-A topic page is not rebuilt on every request.
+A topic index Markdown document is not rebuilt on every request.
 
 Instead:
 
 - when topic members change
 - the server regenerates the topic index
-- stores the resulting HTML into `surl:<topic>`
-- later public reads simply return that HTML
+- stores the resulting Markdown into `surl:<topic>`
+- later public reads render that Markdown into full HTML
 
 This is an important architecture choice:
 
 - lower request-time cost
-- simpler public serving path
-- topic index becomes a materialized view
+- deterministic topic ordering
+- topic index Markdown becomes a materialized view
+- footer and page assets are injected by the server that handles the read
 
 Topic page display rules:
 
@@ -844,20 +858,21 @@ Post-go uses a simple and effective rule:
 
 For internal tools, temporary share systems, AI agent bridges, and app-to-app posting, this is often enough.
 
-### 6.3 Treat topic as a materialized index
+### 6.3 Treat topic as a materialized Markdown index
 
-Do not compute topic pages on every request.
+Do not compute topic membership and ordering on every request.
 
 Instead:
 
 1. store child objects normally
 2. maintain a zset index
-3. rebuild topic HTML whenever membership changes
+3. rebuild topic Markdown whenever membership changes
+4. render that Markdown to HTML on public reads
 
 That gives you:
 
-- fast public read
 - deterministic ordering
+- current server-side footer rendering
 - simple cache behavior
 
 ### 6.4 Separate blob storage from metadata storage
@@ -922,7 +937,7 @@ The most important facts about Post-go are:
 
 - it is a unified-path content server
 - Redis stores both objects and topic indexes
-- topic pages are prebuilt and materialized
+- topic index Markdown is materialized, while topic HTML is rendered on read
 - public reads are type-driven
 - frontend is mostly server-rendered HTML plus embedded assets
 - the real operational contract is best learned from smoke tests, not only from `API.md`

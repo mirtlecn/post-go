@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"post-go/internal/core"
 	"post-go/internal/s3"
 	"post-go/internal/storage"
+	"post-go/internal/topic"
 	"post-go/internal/utils"
 
 	"github.com/minio/minio-go/v7"
@@ -540,6 +542,13 @@ func TestHandleJSONCreateCreatesTopicHome(t *testing.T) {
 	if stored.Title != "anime" {
 		t.Fatalf("expected topic title fallback to path, got %q", stored.Title)
 	}
+	expectedContent := topic.BuildIndexMarkdown("anime", "anime", nil)
+	if stored.Content != expectedContent {
+		t.Fatalf("expected stored topic markdown, got %q", stored.Content)
+	}
+	if strings.Contains(stored.Content, "<html") || strings.Contains(stored.Content, "<body") || strings.Contains(stored.Content, "post-footer") {
+		t.Fatalf("expected topic markdown without full HTML chrome, got %q", stored.Content)
+	}
 	assertRFC3339Value(t, stored.Created)
 }
 
@@ -911,6 +920,8 @@ func TestHandlePathNormalizesTrailingSlashOnLookup(t *testing.T) {
 }
 
 func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
+	footer := base64.StdEncoding.EncodeToString([]byte(`stored-topic-footer-1bb2`))
+	t.Setenv("FOOTER", footer)
 	store := &fakeRedisStore{
 		zrangeResult: []redis.Z{
 			{Score: float64(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix()), Member: "alive"},
@@ -947,6 +958,21 @@ func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
 	if stored.Title != "Anime Archive" {
 		t.Fatalf("expected rebuilt topic title to be preserved, got %q", stored.Title)
 	}
+	expectedContent := topic.BuildIndexMarkdown("anime", "Anime Archive", []topic.Item{
+		{
+			Path:      "alive",
+			FullPath:  "anime/alive",
+			Type:      "text",
+			Title:     "Alive",
+			UpdatedAt: time.Unix(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix(), 0),
+		},
+	})
+	if stored.Content != expectedContent {
+		t.Fatalf("expected rebuilt topic markdown, got %q", stored.Content)
+	}
+	if strings.Contains(stored.Content, "<html") || strings.Contains(stored.Content, "<body") || strings.Contains(stored.Content, "post-footer") {
+		t.Fatalf("expected stored topic markdown without full HTML chrome, got %q", stored.Content)
+	}
 }
 
 func TestRebuildTopicIndexPrefersStoredCreatedForSorting(t *testing.T) {
@@ -967,7 +993,7 @@ func TestRebuildTopicIndexPrefersStoredCreatedForSorting(t *testing.T) {
 		t.Fatalf("expected rebuild to succeed, got %v", err)
 	}
 	stored := storage.ParseStoredValue(store.lastSetValue)
-	if strings.Index(stored.Content, ">New<") >= strings.Index(stored.Content, ">Old<") {
+	if strings.Index(stored.Content, "[New]") >= strings.Index(stored.Content, "[Old]") {
 		t.Fatalf("expected topic index to sort by created, got %q", stored.Content)
 	}
 }
@@ -2219,9 +2245,23 @@ func TestServeHTTPServesUnknownAssetPathWhenStoredAsRegularItem(t *testing.T) {
 }
 
 func TestServeHTTPReturnsTopicHomeWithTopicCacheHeader(t *testing.T) {
+	footer := base64.StdEncoding.EncodeToString([]byte(`topic-footer-6f91 <a href="https://example.test/topic-footer">footer</a>`))
+	t.Setenv("FOOTER", footer)
+	topicMarkdown := topic.BuildIndexMarkdown("anime", "Anime Archive", []topic.Item{
+		{
+			Path:      "castle-notes",
+			Type:      "md",
+			Title:     "Castle Notes",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	})
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html><body>Anime</body></html>","title":"Anime Archive"}`},
+			"surl:anime": {value: storage.BuildStoredValue(storage.StoredValue{
+				Type:    topicType,
+				Content: topicMarkdown,
+				Title:   "Anime Archive",
+			})},
 		},
 	}
 	handler := newTestHandler(store)
@@ -2236,8 +2276,18 @@ func TestServeHTTPReturnsTopicHomeWithTopicCacheHeader(t *testing.T) {
 	if response.Header().Get("Cache-Control") != topicCacheControl {
 		t.Fatalf("expected topic cache header %q, got %q", topicCacheControl, response.Header().Get("Cache-Control"))
 	}
-	if !strings.Contains(response.Body.String(), "Anime") {
-		t.Fatalf("expected topic body, got %q", response.Body.String())
+	body := response.Body.String()
+	if !strings.Contains(body, "<title>Anime Archive</title>") {
+		t.Fatalf("expected topic title, got %q", body)
+	}
+	if !strings.Contains(body, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>") {
+		t.Fatalf("expected topic heading, got %q", body)
+	}
+	if !strings.Contains(body, `href="/anime/castle-notes"`) {
+		t.Fatalf("expected rendered topic item link, got %q", body)
+	}
+	if !strings.Contains(body, `<footer class="markdown-body post-footer">`) || !strings.Contains(body, "topic-footer-6f91") {
+		t.Fatalf("expected topic footer to render at read time, got %q", body)
 	}
 }
 
