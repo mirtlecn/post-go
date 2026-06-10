@@ -13,6 +13,7 @@ type AppConfig struct {
 	RedisURL         string
 	MaxContentKB     int
 	MaxFileMB        int
+	BaseDomain       string
 	S3Endpoint       string
 	S3AccessKeyID    string
 	S3SecretAccess   string
@@ -28,6 +29,7 @@ func LoadConfig(env config.Env) AppConfig {
 		RedisURL:         env.String("LINKS_REDIS_URL", ""),
 		MaxContentKB:     env.Int("MAX_CONTENT_SIZE_KB", 500),
 		MaxFileMB:        env.Int("MAX_FILE_SIZE_MB", 10),
+		BaseDomain:       env.String("BASE_DOMAIN", ""),
 		S3Endpoint:       env.String("S3_ENDPOINT", ""),
 		S3AccessKeyID:    env.String("S3_ACCESS_KEY_ID", ""),
 		S3SecretAccess:   env.String("S3_SECRET_ACCESS_KEY", ""),

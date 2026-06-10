@@ -6,13 +6,15 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const (
-	LinksPrefix   = "surl:"
-	PreviewLength = 15
+	LinksPrefix             = "surl:"
+	PreviewLength           = 15
 	DefaultJSONBodyMaxBytes = 512 * 1024
 )
 
@@ -25,6 +27,7 @@ type StoredValue struct {
 }
 
 var defaultCreatedLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+var schemePrefixPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:/+`)
 
 // BuildStoredValue marshals a stored value to JSON.
 func BuildStoredValue(value StoredValue) string {
@@ -76,6 +79,45 @@ func GetDomain(r *http.Request) string {
 		host = r.Host
 	}
 	return proto + "://" + host
+}
+
+// NormalizeBaseDomain extracts a host from deployment domain config.
+func NormalizeBaseDomain(value string) string {
+	input := strings.TrimSpace(value)
+	if input == "" {
+		return ""
+	}
+	if strings.HasPrefix(input, "//") {
+		input = "https:" + input
+	}
+	if parsed, err := url.Parse(input); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		return parsed.Host
+	} else if err == nil && parsed.Scheme != "" && strings.Contains(input, "://") {
+		return ""
+	}
+	input = schemePrefixPattern.ReplaceAllString(input, "")
+	input = strings.TrimLeft(input, "/")
+	cutIndex := strings.IndexAny(input, "/?#")
+	if cutIndex >= 0 {
+		input = input[:cutIndex]
+	}
+	host := strings.TrimSpace(input)
+	if host == "" {
+		return ""
+	}
+	if parsed, err := url.Parse("https://" + host); err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return strings.TrimRight(host, "/")
+}
+
+// GetDomainWithBase uses a configured public domain when present.
+func GetDomainWithBase(r *http.Request, baseDomain string) string {
+	normalized := NormalizeBaseDomain(baseDomain)
+	if normalized != "" {
+		return "https://" + normalized
+	}
+	return GetDomain(r)
 }
 
 // ParseJSONBody reads and parses JSON body.

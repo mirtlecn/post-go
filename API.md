@@ -74,6 +74,7 @@ Important config values:
 - `PORT`, default `3000`
 - `MAX_CONTENT_SIZE_KB`, code default `500`
 - `MAX_FILE_SIZE_MB`, default `10`
+- `BASE_DOMAIN`, optional public domain for generated `surl` fields
 - `POST_DEBUG`, default `false`
 
 The sample file `.env.example` sets `MAX_CONTENT_SIZE_KB=512`, but the code default is `500`. If you do not set the env var, runtime uses `500`.
@@ -311,7 +312,7 @@ When you create a topic home:
 
 This means a topic can "adopt" old paths that already existed before the topic home was created.
 
-When you refresh a topic home with `PUT` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching paths into `topic:<topic>:items`, ensures the placeholder member exists, and rebuilds the topic HTML.
+When you refresh a topic home with `POST /update` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching paths into `topic:<topic>:items`, ensures the placeholder member exists, and rebuilds the topic HTML.
 
 ### 3.6 Topic delete semantics
 
@@ -418,6 +419,8 @@ It is used only for:
 - `POST /query`
 
 Public `GET /<path>` needs no authentication.
+
+Generated management response links use `BASE_DOMAIN` when configured. The value is normalized to a host and returned as `https://<host>`; otherwise links are built from `x-forwarded-proto`, `x-forwarded-host`, and `Host`.
 
 The system does not support:
 
@@ -602,7 +605,7 @@ Optional fields:
 Important behaviors:
 
 - if S3 is not configured, upload returns `501 s3_not_configured`
-- `PUT` upload requires `path`
+- `POST /update` upload requires `path`
 - if uploaded filename has an extension and the path does not, the server appends the extension automatically
 - upload MIME type is chosen by:
   1. usable multipart content type

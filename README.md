@@ -51,6 +51,12 @@ make
 
 By default, the service is available at `http://localhost:3000` (unless you set `PORT`).
 
+Set `BASE_DOMAIN` if generated API links should use a fixed public domain instead of request headers:
+
+```bash
+BASE_DOMAIN=www.example.com
+```
+
 ---
 
 ## Common Usage

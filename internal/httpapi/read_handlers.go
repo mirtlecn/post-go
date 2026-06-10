@@ -89,7 +89,7 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		return
 	}
 	utils.JSON(w, http.StatusOK, ItemResponse{
-		SURL:    storage.GetDomain(r) + "/" + topicName,
+		SURL:    h.getDomain(r) + "/" + topicName,
 		Path:    topicName,
 		Type:    topicType,
 		Title:   topicDisplayTitle(topicName, storedValue),
@@ -112,7 +112,7 @@ func (h *Handler) handleTopicListAuthed(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	topics := make([]ItemResponse, 0, len(topicNames))
-	domain := storage.GetDomain(r)
+	domain := h.getDomain(r)
 	for _, topicName := range topicNames {
 		item, err := h.buildTopicSummaryResponse(ctx, rdb, domain, topicName)
 		if err != nil {
@@ -138,7 +138,7 @@ func (h *Handler) handleTopicWildcardLookupAuthed(w http.ResponseWriter, r *http
 		return
 	}
 	topics := make([]ItemResponse, 0, len(topicNames))
-	domain := storage.GetDomain(r)
+	domain := h.getDomain(r)
 	for _, topicName := range topicNames {
 		item, err := h.buildTopicSummaryResponse(ctx, rdb, domain, topicName)
 		if err != nil {
@@ -169,7 +169,7 @@ func (h *Handler) handleWildcardLookupAuthed(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	items := make([]ItemResponse, 0, len(keys))
-	domain := storage.GetDomain(r)
+	domain := h.getDomain(r)
 	isExport := isExportRequest(r)
 	for _, key := range keys {
 		path := strings.TrimPrefix(key, storage.LinksPrefix)
@@ -209,7 +209,7 @@ func (h *Handler) handleLookupAuthed(w http.ResponseWriter, r *http.Request, pat
 		return
 	}
 	storedValue := storage.ParseStoredValue(stored)
-	utils.JSON(w, http.StatusOK, buildItemResponse(storage.GetDomain(r), path, storedValue, ttlMinutesFromDuration(ttlDuration), isExportRequest(r)))
+	utils.JSON(w, http.StatusOK, buildItemResponse(h.getDomain(r), path, storedValue, ttlMinutesFromDuration(ttlDuration), isExportRequest(r)))
 }
 
 func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path string) {
@@ -309,7 +309,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain := storage.GetDomain(r)
+	domain := h.getDomain(r)
 	isExport := isExportRequest(r)
 	var cursor uint64
 	var keys []string

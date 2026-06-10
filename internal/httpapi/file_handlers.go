@@ -199,7 +199,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 	isExport := isExportRequest(r)
 	utils.JSON(w, status, CreateResponse{
-		SURL:    storage.GetDomain(r) + "/" + pathVal,
+		SURL:    h.getDomain(r) + "/" + pathVal,
 		Path:    pathVal,
 		Type:    "file",
 		Title:   titleVal,

@@ -960,6 +960,7 @@ func TestHandleJSONCreateConflictIncludesExistingTitle(t *testing.T) {
 		},
 	}
 	handler := newTestHandler(store)
+	handler.Cfg.BaseDomain = "www.example.com/"
 	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"updated","path":"note"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -983,6 +984,9 @@ func TestHandleJSONCreateConflictIncludesExistingTitle(t *testing.T) {
 	}
 	if existing["title"] != "Greeting" {
 		t.Fatalf("expected existing title Greeting, got %#v", existing["title"])
+	}
+	if existing["surl"] != "https://www.example.com/note" {
+		t.Fatalf("expected existing surl to use base domain, got %#v", existing["surl"])
 	}
 }
 
@@ -2363,6 +2367,61 @@ func TestServeHTTPRoutesPostActionPaths(t *testing.T) {
 				t.Fatalf("expected status %d, got %d, body: %s", test.wantStatus, response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestServeHTTPCreateUsesConfiguredBaseDomain(t *testing.T) {
+	store := &fakeRedisStore{}
+	handler := newTestHandler(store)
+	handler.Cfg.BaseDomain = "https://www.example.com/path?x=1"
+	request := httptest.NewRequest(http.MethodPost, "/create", strings.NewReader(`{"url":"hello","path":"note"}`))
+	request.Host = "internal.example"
+	request.Header.Set("x-forwarded-host", "forwarded.example")
+	request.Header.Set("x-forwarded-proto", "http")
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body: %s", response.Code, response.Body.String())
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.SURL != "https://www.example.com/note" {
+		t.Fatalf("expected configured base domain in surl, got %q", body.SURL)
+	}
+}
+
+func TestServeHTTPQueryFallsBackToForwardedDomain(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(`{"path":"note"}`))
+	request.Host = "internal.example"
+	request.Header.Set("x-forwarded-host", "forwarded.example")
+	request.Header.Set("x-forwarded-proto", "http")
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	var body ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.SURL != "http://forwarded.example/note" {
+		t.Fatalf("expected forwarded domain in surl, got %q", body.SURL)
 	}
 }
 

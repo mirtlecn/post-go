@@ -53,6 +53,41 @@ func TestParseStoredValueFallsBackToTextForInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestNormalizeBaseDomainAcceptsHostLikeConfigValues(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{input: "example.com", expected: "example.com"},
+		{input: "localhost:3000", expected: "localhost:3000"},
+		{input: "www.example.com/", expected: "www.example.com"},
+		{input: "https://www.example.com/path?x=1", expected: "www.example.com"},
+		{input: "http://example.com:8080/", expected: "example.com:8080"},
+		{input: "//cdn.example.com/asset", expected: "cdn.example.com"},
+		{input: "", expected: ""},
+	}
+
+	for _, test := range tests {
+		if got := NormalizeBaseDomain(test.input); got != test.expected {
+			t.Fatalf("expected normalized base domain %q for %q, got %q", test.expected, test.input, got)
+		}
+	}
+}
+
+func TestGetDomainWithBaseUsesBaseDomainAndFallsBackToRequestHeaders(t *testing.T) {
+	request := httptest.NewRequest("GET", "/", nil)
+	request.Host = "internal.example"
+	request.Header.Set("x-forwarded-host", "forwarded.example")
+	request.Header.Set("x-forwarded-proto", "http")
+
+	if got := GetDomainWithBase(request, ""); got != "http://forwarded.example" {
+		t.Fatalf("expected forwarded domain, got %q", got)
+	}
+	if got := GetDomainWithBase(request, "https://www.example.com/"); got != "https://www.example.com" {
+		t.Fatalf("expected base domain, got %q", got)
+	}
+}
+
 func TestParseJSONBodyPreservesJSONNumber(t *testing.T) {
 	request := httptest.NewRequest("POST", "/", strings.NewReader(`{"ttl":1}`))
 

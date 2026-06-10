@@ -204,6 +204,10 @@ func responseContent(typ, content string, isExport bool) string {
 	return storage.PreviewContent(typ, content)
 }
 
+func (h *Handler) getDomain(r *http.Request) string {
+	return storage.GetDomainWithBase(r, h.Cfg.BaseDomain)
+}
+
 func buildItemResponse(domain, path string, storedValue storage.StoredValue, ttl *int64, isExport bool) ItemResponse {
 	return ItemResponse{
 		SURL:    domain + "/" + path,

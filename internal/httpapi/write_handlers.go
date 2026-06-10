@@ -221,7 +221,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	if existing != "" && !allowOverwrite {
 		existingValue := storage.ParseStoredValue(existing)
 		details := map[string]any{
-			"existing": buildItemResponse(storage.GetDomain(r), pathVal, existingValue, nil, isExport),
+			"existing": buildItemResponse(h.getDomain(r), pathVal, existingValue, nil, isExport),
 		}
 		utils.Error(w, http.StatusConflict, "conflict", "path \""+pathVal+"\" already exists", "Use POST /update to overwrite", details)
 		return
@@ -240,7 +240,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	result := CreateResponse{
-		SURL:    storage.GetDomain(r) + "/" + pathVal,
+		SURL:    h.getDomain(r) + "/" + pathVal,
 		Path:    pathVal,
 		Type:    contentType,
 		Title:   titleVal,
@@ -350,7 +350,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		status = http.StatusOK
 	}
 	utils.JSON(w, status, CreateResponse{
-		SURL:    storage.GetDomain(r) + "/" + topicName,
+		SURL:    h.getDomain(r) + "/" + topicName,
 		Path:    topicName,
 		Type:    topicType,
 		Title:   topicTitle,
