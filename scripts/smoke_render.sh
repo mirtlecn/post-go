@@ -134,6 +134,50 @@ func main() {
 	mustContain("shanghai date display", shanghaiMarkdown, "[Asia Time](</anime/asia-time>) ☰ 2022-10-11")
 	pass("shanghai date display")
 
+	groupedItems := []topic.Item{
+		{
+			Path:      "newest",
+			Type:      "md",
+			Title:     "Newest",
+			UpdatedAt: time.Date(2026, time.May, 23, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Path:      "text-entry",
+			Type:      "text",
+			Title:     "Text Entry",
+			UpdatedAt: time.Date(2026, time.May, 22, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Path:      "oldest",
+			Type:      "file",
+			Title:     "Oldest",
+			UpdatedAt: time.Date(2025, time.May, 23, 10, 0, 0, 0, time.UTC),
+		},
+	}
+	for day := 21; day >= 13; day-- {
+		groupedItems = append(groupedItems, topic.Item{
+			Path:      fmt.Sprintf("post-%02d", day),
+			Type:      "html",
+			Title:     fmt.Sprintf("Post %02d", day),
+			UpdatedAt: time.Date(2026, time.May, day, 10, 0, 0, 0, time.UTC),
+		})
+	}
+	groupedMarkdown := topic.BuildIndexMarkdown("anime", "Anime", groupedItems)
+	mustContain("grouped index 2026", groupedMarkdown, "## 2026")
+	pass("grouped index 2026")
+	mustContain("grouped markdown item", groupedMarkdown, "[Newest](</anime/newest>) · 05-23")
+	pass("grouped markdown item")
+	mustContain("grouped type mark", groupedMarkdown, "[Text Entry](</anime/text-entry>) ☰ · 05-22")
+	pass("grouped type mark")
+	mustContain("grouped index 2025", groupedMarkdown, "## 2025")
+	pass("grouped index 2025")
+	mustContain("grouped older item", groupedMarkdown, "[Oldest](</anime/oldest>) ◫ · 05-23")
+	pass("grouped older item")
+	if strings.Contains(groupedMarkdown, "2026-05-23") {
+		fail("grouped date format", "grouped entries should use MM-DD dates")
+	}
+	pass("grouped date format")
+
 	indexHTML, err := topic.RenderIndexHTML("anime", "Anime", []topic.Item{
 		{
 			Path:      "howl-visual",

@@ -51,6 +51,133 @@ func TestBuildIndexMarkdownSortsByUpdatedAtAsFlatList(t *testing.T) {
 	}
 }
 
+func TestBuildIndexMarkdownGroupsByDisplayYearWhenLargeAndMultiYear(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "newest",
+			Type:      "md",
+			Title:     "Newest",
+			UpdatedAt: time.Date(2026, time.May, 23, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Path:      "text-entry",
+			Type:      "text",
+			Title:     "Text Entry",
+			UpdatedAt: time.Date(2026, time.May, 22, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Path:      "oldest",
+			Type:      "file",
+			Title:     "Oldest",
+			UpdatedAt: time.Date(2025, time.May, 23, 10, 0, 0, 0, time.UTC),
+		},
+	}
+	for day := 21; day >= 13; day-- {
+		items = append(items, Item{
+			Path:      "post-" + time.Date(2026, time.May, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			Type:      "html",
+			Title:     "Post " + time.Date(2026, time.May, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			UpdatedAt: time.Date(2026, time.May, day, 10, 0, 0, 0, time.UTC),
+		})
+	}
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	year2026 := strings.Index(output, "## 2026")
+	year2025 := strings.Index(output, "## 2025")
+	if year2026 == -1 || year2025 == -1 || year2026 > year2025 {
+		t.Fatalf("expected grouped years in descending order, got %q", output)
+	}
+	if !strings.Contains(output, "- [Newest](</anime/newest>) · 05-23") {
+		t.Fatalf("expected grouped markdown item without type mark, got %q", output)
+	}
+	if !strings.Contains(output, "- [Text Entry](</anime/text-entry>) ☰ · 05-22") {
+		t.Fatalf("expected grouped markdown item with type mark, got %q", output)
+	}
+	if !strings.Contains(output, "- [Oldest](</anime/oldest>) ◫ · 05-23") {
+		t.Fatalf("expected grouped older year item, got %q", output)
+	}
+	if strings.Contains(output, "2026-05-23") {
+		t.Fatalf("expected grouped items to use MM-DD dates, got %q", output)
+	}
+}
+
+func TestBuildIndexMarkdownKeepsFlatListForTenMultiYearItems(t *testing.T) {
+	items := make([]Item, 0, 10)
+	for day := 23; day >= 15; day-- {
+		items = append(items, Item{
+			Path:      "post-" + time.Date(2026, time.May, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			Type:      "md",
+			Title:     "Post " + time.Date(2026, time.May, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			UpdatedAt: time.Date(2026, time.May, day, 10, 0, 0, 0, time.UTC),
+		})
+	}
+	items = append(items, Item{
+		Path:      "oldest",
+		Type:      "file",
+		Title:     "Oldest",
+		UpdatedAt: time.Date(2025, time.May, 23, 10, 0, 0, 0, time.UTC),
+	})
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	if strings.Contains(output, "## 2026") || strings.Contains(output, "## 2025") {
+		t.Fatalf("expected ten items to keep flat output, got %q", output)
+	}
+	if !strings.Contains(output, "- [Oldest](</anime/oldest>) ◫ 2025-05-23") {
+		t.Fatalf("expected flat date format for ten items, got %q", output)
+	}
+}
+
+func TestBuildIndexMarkdownKeepsFlatListForSingleDisplayYear(t *testing.T) {
+	items := make([]Item, 0, 11)
+	for day := 23; day >= 13; day-- {
+		items = append(items, Item{
+			Path:      "post-" + time.Date(2026, time.May, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			Type:      "md",
+			Title:     "Post " + time.Date(2026, time.May, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			UpdatedAt: time.Date(2026, time.May, day, 10, 0, 0, 0, time.UTC),
+		})
+	}
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	if strings.Contains(output, "## 2026") {
+		t.Fatalf("expected one display year to keep flat output, got %q", output)
+	}
+	if !strings.Contains(output, "- [Post 23](</anime/post-23>) 2026-05-23") {
+		t.Fatalf("expected flat date format for one year, got %q", output)
+	}
+}
+
+func TestBuildIndexMarkdownGroupsByAsiaShanghaiYear(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "new-year",
+			Type:      "md",
+			Title:     "New Year",
+			UpdatedAt: time.Date(2025, time.December, 31, 16, 30, 0, 0, time.UTC),
+		},
+	}
+	for day := 30; day >= 20; day-- {
+		items = append(items, Item{
+			Path:      "post-" + time.Date(2025, time.December, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			Type:      "md",
+			Title:     "Post " + time.Date(2025, time.December, day, 0, 0, 0, 0, time.UTC).Format("02"),
+			UpdatedAt: time.Date(2025, time.December, day, 10, 0, 0, 0, time.UTC),
+		})
+	}
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	if !strings.Contains(output, "## 2026\n- [New Year](</anime/new-year>) · 01-01") {
+		t.Fatalf("expected UTC year boundary to use Asia/Shanghai display year, got %q", output)
+	}
+	if !strings.Contains(output, "## 2025") {
+		t.Fatalf("expected remaining items under 2025 display year, got %q", output)
+	}
+}
+
 func TestBuildIndexMarkdownUsesFullPathFallbackForEmptyTitle(t *testing.T) {
 	items := []Item{
 		{

@@ -785,9 +785,11 @@ Topic page display rules:
 
 - heading uses topic title, defaulting to path
 - show `Home`
-- render a flat Markdown list of members
 - sort by updated time descending
 - use title if present, otherwise use relative path
+- render a flat Markdown list when there are 10 or fewer members, or when all members are in the same display year
+- render a year-grouped Markdown list when there are more than 10 members across multiple display years
+- grouped lists use `## YYYY` headings and `MM-DD` dates
 
 Type marks:
 

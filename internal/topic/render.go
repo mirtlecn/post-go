@@ -4,6 +4,7 @@ import (
 	"html"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +22,7 @@ type Item struct {
 	UpdatedAt time.Time
 }
 
-// BuildIndexMarkdown renders the topic index as a flat Markdown list.
+// BuildIndexMarkdown renders the topic index as Markdown.
 func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 	var builder strings.Builder
 	builder.WriteString("<div style=\"font-size: 1.3em; font-weight: bold\">")
@@ -43,19 +44,13 @@ func BuildIndexMarkdown(topicPath, topicTitle string, items []Item) string {
 	})
 
 	builder.WriteString("\n")
+	if shouldGroupByDisplayYear(sorted) {
+		writeGroupedIndexItems(&builder, topicPath, sorted)
+		return builder.String()
+	}
+
 	for _, item := range sorted {
-		builder.WriteString("- [")
-		builder.WriteString(displayTitle(topicPath, item))
-		builder.WriteString("](")
-		builder.WriteString(formatMarkdownLinkDestination(buildTopicItemHref(topicPath, item.Path)))
-		builder.WriteString(")")
-		if mark := typeMark(item.Type); mark != "" {
-			builder.WriteString(" ")
-			builder.WriteString(mark)
-		}
-		builder.WriteString(" ")
-		builder.WriteString(item.UpdatedAt.In(displayTimeLocation).Format("2006-01-02"))
-		builder.WriteString("\n")
+		writeIndexItem(&builder, topicPath, item, " ", item.UpdatedAt.In(displayTimeLocation).Format("2006-01-02"))
 	}
 
 	return builder.String()
@@ -75,6 +70,51 @@ func buildTopicItemHref(topicPath, itemPath string) string {
 
 func formatMarkdownLinkDestination(destination string) string {
 	return "<" + destination + ">"
+}
+
+func shouldGroupByDisplayYear(items []Item) bool {
+	if len(items) <= 10 {
+		return false
+	}
+	firstYear := items[0].UpdatedAt.In(displayTimeLocation).Year()
+	for _, item := range items[1:] {
+		if item.UpdatedAt.In(displayTimeLocation).Year() != firstYear {
+			return true
+		}
+	}
+	return false
+}
+
+func writeGroupedIndexItems(builder *strings.Builder, topicPath string, items []Item) {
+	currentYear := 0
+	for _, item := range items {
+		displayTime := item.UpdatedAt.In(displayTimeLocation)
+		if year := displayTime.Year(); year != currentYear {
+			if currentYear != 0 {
+				builder.WriteString("\n")
+			}
+			currentYear = year
+			builder.WriteString("## ")
+			builder.WriteString(strconv.Itoa(year))
+			builder.WriteString("\n")
+		}
+		writeIndexItem(builder, topicPath, item, " · ", displayTime.Format("01-02"))
+	}
+}
+
+func writeIndexItem(builder *strings.Builder, topicPath string, item Item, datePrefix, date string) {
+	builder.WriteString("- [")
+	builder.WriteString(displayTitle(topicPath, item))
+	builder.WriteString("](")
+	builder.WriteString(formatMarkdownLinkDestination(buildTopicItemHref(topicPath, item.Path)))
+	builder.WriteString(")")
+	if mark := typeMark(item.Type); mark != "" {
+		builder.WriteString(" ")
+		builder.WriteString(mark)
+	}
+	builder.WriteString(datePrefix)
+	builder.WriteString(date)
+	builder.WriteString("\n")
 }
 
 func displayTitle(topicName string, item Item) string {
