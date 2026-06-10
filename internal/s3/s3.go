@@ -72,7 +72,7 @@ func (c *Client) UploadFile(ctx context.Context, filename string, size int64, co
 }
 
 // GetObject fetches object as stream.
-func (c *Client) GetObject(ctx context.Context, objectKey string) (*minio.Object, minio.ObjectInfo, error) {
+func (c *Client) GetObject(ctx context.Context, objectKey string) (io.ReadCloser, minio.ObjectInfo, error) {
 	obj, err := c.mc.GetObject(ctx, c.conf.Bucket, objectKey, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, minio.ObjectInfo{}, err

@@ -231,7 +231,8 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, obj
 	}
 	if cached, err := h.deps.getFileCache(ctx, rdb, pathVal); err == nil && cached != nil {
 		requestLogger{}.Infof("file cache hit: %s", pathVal)
-		utils.Binary(w, http.StatusOK, cached.Buffer, cached.ContentType, cached.ContentLength, true)
+		contentType := ensureUTF8CharsetForTextContentType(cached.ContentType)
+		utils.Binary(w, http.StatusOK, cached.Buffer, contentType, cached.ContentLength, true)
 		return
 	}
 	requestLogger{}.Infof("file cache miss: %s", pathVal)
@@ -248,20 +249,22 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, pathVal, obj
 	if info.Size > 0 && info.Size <= maxBytes {
 		buf := &bytes.Buffer{}
 		mw := io.MultiWriter(w, buf)
-		w.Header().Set("Content-Type", info.ContentType)
+		contentType := ensureUTF8CharsetForTextContentType(info.ContentType)
+		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Content-Length", itoa(int(info.Size)))
 		w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=86400")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.Copy(mw, obj)
 		_ = h.deps.setFileCache(ctx, rdb, pathVal, &core.FileCacheItem{
 			Buffer:        buf.Bytes(),
-			ContentType:   info.ContentType,
+			ContentType:   contentType,
 			ContentLength: info.Size,
 		})
 		return
 	}
 
-	w.Header().Set("Content-Type", info.ContentType)
+	contentType := ensureUTF8CharsetForTextContentType(info.ContentType)
+	w.Header().Set("Content-Type", contentType)
 	if info.Size > 0 {
 		w.Header().Set("Content-Length", itoa(int(info.Size)))
 	}

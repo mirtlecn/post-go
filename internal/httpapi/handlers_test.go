@@ -64,12 +64,17 @@ type fakeStringResult struct {
 }
 
 type fakeFileStore struct {
-	uploadObjectKey string
-	uploadErr       error
-	lastUploadTTL   int64
-	lastUploadType  string
-	deleteErr       error
-	deleteCalls     []string
+	uploadObjectKey      string
+	uploadErr            error
+	lastUploadTTL        int64
+	lastUploadType       string
+	getObjectBody        string
+	getObjectContentType string
+	getObjectSize        int64
+	getObjectErr         error
+	getObjectCalls       []string
+	deleteErr            error
+	deleteCalls          []string
 }
 
 func (f *fakeRedisStore) Get(ctx context.Context, key string) *redis.StringCmd {
@@ -215,8 +220,22 @@ func (f *fakeFileStore) UploadFile(ctx context.Context, filename string, size in
 	return f.uploadObjectKey, nil
 }
 
-func (f *fakeFileStore) GetObject(ctx context.Context, objectKey string) (*minio.Object, minio.ObjectInfo, error) {
-	return nil, minio.ObjectInfo{}, errors.New("not implemented")
+func (f *fakeFileStore) GetObject(ctx context.Context, objectKey string) (io.ReadCloser, minio.ObjectInfo, error) {
+	f.getObjectCalls = append(f.getObjectCalls, objectKey)
+	if f.getObjectErr != nil {
+		return nil, minio.ObjectInfo{}, f.getObjectErr
+	}
+	if f.getObjectBody == "" && f.getObjectContentType == "" && f.getObjectSize == 0 {
+		return nil, minio.ObjectInfo{}, errors.New("not implemented")
+	}
+	size := f.getObjectSize
+	if size == 0 {
+		size = int64(len(f.getObjectBody))
+	}
+	return io.NopCloser(strings.NewReader(f.getObjectBody)), minio.ObjectInfo{
+		ContentType: f.getObjectContentType,
+		Size:        size,
+	}, nil
 }
 
 func (f *fakeFileStore) DeleteObject(ctx context.Context, objectKey string) error {
@@ -1856,8 +1875,25 @@ func TestHandleFileUploadKeepsExplicitMultipartContentType(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
-	if fileStore.lastUploadType != "text/plain" {
-		t.Fatalf("expected explicit multipart content type to be preserved, got %q", fileStore.lastUploadType)
+	if fileStore.lastUploadType != "text/plain; charset=utf-8" {
+		t.Fatalf("expected explicit multipart text content type to include utf-8 charset, got %q", fileStore.lastUploadType)
+	}
+}
+
+func TestHandleFileUploadAddsCharsetToShellContentType(t *testing.T) {
+	store := &fakeRedisStore{}
+	fileStore := &fakeFileStore{uploadObjectKey: "post/default/uploaded.sh"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := newMultipartUploadRequestWithFileContentType(t, http.MethodPost, map[string]string{"path": "script"}, "script.sh", "#!/bin/sh\necho hello\n", "application/x-sh")
+	response := httptest.NewRecorder()
+
+	handler.handleFileUpload(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	if fileStore.lastUploadType != "application/x-sh; charset=utf-8" {
+		t.Fatalf("expected shell content type with utf-8 charset, got %q", fileStore.lastUploadType)
 	}
 }
 
@@ -2308,6 +2344,112 @@ func TestHandleFileUploadReturnsMainFailureWhenCompensationFails(t *testing.T) {
 	}
 }
 
+func TestServeHTTPAddsCharsetForS3ShellFile(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			store := newFileLookupStore("script.sh", "post/default/script.sh")
+			fileStore := &fakeFileStore{
+				getObjectBody:        "#!/bin/sh\necho hello\n",
+				getObjectContentType: "application/x-sh",
+			}
+			handler := newTestHandlerWithDeps(store, fileStore)
+			var cachedItem *core.FileCacheItem
+			handler.deps.setFileCache = func(ctx context.Context, rdb redisStore, path string, item *core.FileCacheItem) error {
+				cachedItem = item
+				return nil
+			}
+			request := httptest.NewRequest(method, "/script.sh", nil)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Content-Type"); got != "application/x-sh; charset=utf-8" {
+				t.Fatalf("expected shell content type with utf-8 charset, got %q", got)
+			}
+			if cachedItem == nil || cachedItem.ContentType != "application/x-sh; charset=utf-8" {
+				t.Fatalf("expected normalized content type to be cached, got %+v", cachedItem)
+			}
+		})
+	}
+}
+
+func TestServeHTTPAddsCharsetForCachedShellFile(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			store := newFileLookupStore("script.sh", "post/default/script.sh")
+			fileStore := &fakeFileStore{}
+			handler := newTestHandlerWithDeps(store, fileStore)
+			handler.deps.getFileCache = func(ctx context.Context, rdb redisStore, path string) (*core.FileCacheItem, error) {
+				return &core.FileCacheItem{
+					Buffer:        []byte("#!/bin/sh\necho hello\n"),
+					ContentType:   "application/x-sh",
+					ContentLength: 21,
+				}, nil
+			}
+			request := httptest.NewRequest(method, "/script.sh", nil)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Content-Type"); got != "application/x-sh; charset=utf-8" {
+				t.Fatalf("expected cached shell content type with utf-8 charset, got %q", got)
+			}
+			if len(fileStore.getObjectCalls) != 0 {
+				t.Fatalf("expected cache hit to avoid s3 fetch, got %+v", fileStore.getObjectCalls)
+			}
+		})
+	}
+}
+
+func TestServeHTTPPreservesSVGContentTypeFromS3(t *testing.T) {
+	store := newFileLookupStore("icon.svg", "post/default/icon.svg")
+	fileStore := &fakeFileStore{
+		getObjectBody:        "<svg></svg>",
+		getObjectContentType: "image/svg+xml",
+	}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	request := httptest.NewRequest(http.MethodGet, "/icon.svg", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Fatalf("expected svg content type to be preserved, got %q", got)
+	}
+}
+
+func TestServeHTTPPreservesSVGContentTypeFromFileCache(t *testing.T) {
+	store := newFileLookupStore("icon.svg", "post/default/icon.svg")
+	handler := newTestHandlerWithDeps(store, &fakeFileStore{})
+	handler.deps.getFileCache = func(ctx context.Context, rdb redisStore, path string) (*core.FileCacheItem, error) {
+		return &core.FileCacheItem{
+			Buffer:        []byte("<svg></svg>"),
+			ContentType:   "image/svg+xml",
+			ContentLength: 11,
+		}, nil
+	}
+	request := httptest.NewRequest(http.MethodGet, "/icon.svg", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Fatalf("expected cached svg content type to be preserved, got %q", got)
+	}
+}
+
 func TestServeHTTPRoutesPostActionPaths(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -2556,6 +2698,17 @@ func TestServeHTTPUpdateFileUploadRequiresPath(t *testing.T) {
 
 func newTestHandler(store redisStore) *Handler {
 	return newTestHandlerWithDeps(store, &fakeFileStore{})
+}
+
+func newFileLookupStore(path, objectKey string) *fakeRedisStore {
+	return &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			storage.LinksPrefix + path: {value: storage.BuildStoredValue(storage.StoredValue{
+				Type:    "file",
+				Content: objectKey,
+			})},
+		},
+	}
 }
 
 func newTestHandlerWithDeps(store redisStore, fileStore fileObjectStore) *Handler {

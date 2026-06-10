@@ -28,7 +28,7 @@ type redisStore interface {
 
 type fileObjectStore interface {
 	UploadFile(ctx context.Context, filename string, size int64, contentType string, reader io.Reader, ttlSeconds int64) (string, error)
-	GetObject(ctx context.Context, objectKey string) (*minio.Object, minio.ObjectInfo, error)
+	GetObject(ctx context.Context, objectKey string) (io.ReadCloser, minio.ObjectInfo, error)
 	DeleteObject(ctx context.Context, objectKey string) error
 }
 

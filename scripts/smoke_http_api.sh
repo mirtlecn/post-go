@@ -23,6 +23,11 @@ cleanup_http_api_smoke() {
       -H "Content-Type: application/json" \
       -d "{\"path\":\"$SMOKE_PREFIX-file-zero.txt\"}" \
       "$POST_BASE_URL/delete" >/dev/null 2>&1 || true
+    curl -sS -X POST \
+      -H "Authorization: Bearer $POST_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"path\":\"$SMOKE_PREFIX-file-sh.sh\"}" \
+      "$POST_BASE_URL/delete" >/dev/null 2>&1 || true
   fi
   redis_flush >/dev/null 2>&1 || true
   cleanup_smoke_tmp
@@ -336,6 +341,30 @@ if [[ "$(cat "$TMP_DIR/file-octet-delete.status")" != "404" ]]; then
   fail "delete octet stream repair file public lookup" "expected HTTP 404 after delete, got $(cat "$TMP_DIR/file-octet-delete.status"), body: $(cat "$TMP_DIR/file-octet-delete.body")"
 fi
 pass "file upload octet stream repair"
+
+FILE_SH_PATH="$TMP_DIR/upload.sh"
+printf '#!/bin/sh\necho upload-body\n' >"$FILE_SH_PATH"
+FILE_SH_BODY="$TMP_DIR/file-sh.body"
+FILE_SH_STATUS="$TMP_DIR/file-sh.status"
+curl -sS -o "$FILE_SH_BODY" -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -F "file=@$FILE_SH_PATH;type=application/x-sh" \
+  -F "path=$SMOKE_PREFIX-file-sh" \
+  "$POST_BASE_URL/create" >"$FILE_SH_STATUS"
+FILE_SH_HTTP_STATUS="$(cat "$FILE_SH_STATUS")"
+FILE_SH_HTTP_BODY="$(cat "$FILE_SH_BODY")"
+if [[ "$FILE_SH_HTTP_STATUS" != "201" ]]; then
+  fail "file upload shell charset" "expected HTTP 201, got $FILE_SH_HTTP_STATUS, body: $FILE_SH_HTTP_BODY"
+fi
+FILE_SH_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-file-sh.sh")"
+assert_contains "$FILE_SH_HEADERS" "Content-Type: application/x-sh; charset=utf-8" "file upload shell charset header"
+FILE_SH_PUBLIC_BODY="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file-sh.sh")"
+assert_contains "$FILE_SH_PUBLIC_BODY" "upload-body" "file upload shell charset body"
+api_json POST "$POST_BASE_URL/delete" '{"path":"'"$SMOKE_PREFIX"'-file-sh.sh"}'
+assert_status 200 "delete shell charset file"
+assert_jq '.type == "file"' "delete shell charset file type"
+pass "file upload shell charset"
 
 FILE_ZERO_BODY="$TMP_DIR/file-zero.body"
 FILE_ZERO_STATUS="$TMP_DIR/file-zero.status"

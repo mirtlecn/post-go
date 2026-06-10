@@ -612,6 +612,8 @@ Important behaviors:
   2. extension inference
   3. body sniffing
   4. fallback to `application/octet-stream`
+- text content types without an explicit `charset` are served with `charset=utf-8`; new uploads store the normalized value in S3 metadata too
+- the text charset normalization covers all `text/*` types and a small application whitelist such as `application/json`, `application/javascript`, `application/xml`, `application/xhtml+xml`, and shell script types; image types such as `image/svg+xml` are not changed
 
 Large files are streamed back from object storage.
 

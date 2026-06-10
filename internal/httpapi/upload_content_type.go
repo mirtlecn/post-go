@@ -10,16 +10,16 @@ import (
 func resolveUploadContentType(filename, declaredContentType string, body []byte) string {
 	normalizedDeclaredType := strings.TrimSpace(declaredContentType)
 	if isUsableDeclaredContentType(normalizedDeclaredType) {
-		return normalizedDeclaredType
+		return ensureUTF8CharsetForTextContentType(normalizedDeclaredType)
 	}
 
 	if inferredFromExtension := inferContentTypeFromExtension(filename); inferredFromExtension != "" {
-		return inferredFromExtension
+		return ensureUTF8CharsetForTextContentType(inferredFromExtension)
 	}
 	if inferredFromBody := inferContentTypeFromBody(body); inferredFromBody != "" {
-		return inferredFromBody
+		return ensureUTF8CharsetForTextContentType(inferredFromBody)
 	}
-	return "application/octet-stream"
+	return ensureUTF8CharsetForTextContentType("application/octet-stream")
 }
 
 func isUsableDeclaredContentType(contentType string) bool {
@@ -64,19 +64,66 @@ func inferContentTypeFromBody(body []byte) string {
 }
 
 func normalizeInferredContentType(contentType string) string {
-	mediaType, params, err := mime.ParseMediaType(contentType)
+	return ensureUTF8CharsetForTextContentType(contentType)
+}
+
+func ensureUTF8CharsetForTextContentType(contentType string) string {
+	trimmed := strings.TrimSpace(contentType)
+	if trimmed == "" {
+		return ""
+	}
+	mediaType, params, err := mime.ParseMediaType(trimmed)
 	if err != nil {
-		return strings.TrimSpace(contentType)
+		mediaType = fallbackMediaType(contentType)
+		if fallbackHasCharsetParameter(contentType) || !shouldAddUTF8Charset(mediaType) {
+			return trimmed
+		}
+		return trimmed + "; charset=utf-8"
 	}
+	if _, hasCharset := params["charset"]; hasCharset {
+		return trimmed
+	}
+	if shouldAddUTF8Charset(strings.ToLower(mediaType)) {
+		return trimmed + "; charset=utf-8"
+	}
+	return trimmed
+}
+
+func shouldAddUTF8Charset(mediaType string) bool {
 	if strings.HasPrefix(mediaType, "text/") {
-		if _, hasCharset := params["charset"]; !hasCharset {
-			params["charset"] = "utf-8"
-		}
+		return true
 	}
-	if mediaType == "application/json" {
-		if _, hasCharset := params["charset"]; !hasCharset {
-			params["charset"] = "utf-8"
-		}
+	switch mediaType {
+	case "application/json",
+		"application/javascript",
+		"text/javascript",
+		"application/xml",
+		"application/xhtml+xml",
+		"application/x-sh",
+		"application/x-shellscript",
+		"text/x-sh",
+		"text/x-shellscript":
+		return true
+	default:
+		return false
 	}
-	return mime.FormatMediaType(mediaType, params)
+}
+
+func fallbackMediaType(contentType string) string {
+	base, _, _ := strings.Cut(contentType, ";")
+	return strings.ToLower(strings.TrimSpace(base))
+}
+
+func fallbackHasCharsetParameter(contentType string) bool {
+	_, params, found := strings.Cut(contentType, ";")
+	for found {
+		param, rest, hasMore := strings.Cut(params, ";")
+		name, _, hasValue := strings.Cut(strings.TrimSpace(param), "=")
+		if hasValue && strings.EqualFold(strings.TrimSpace(name), "charset") {
+			return true
+		}
+		params = rest
+		found = hasMore
+	}
+	return false
 }
