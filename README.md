@@ -57,6 +57,12 @@ Set `BASE_DOMAIN` if generated API links should use a fixed public domain instea
 BASE_DOMAIN=www.example.com
 ```
 
+Set `FOOTER` to a base64-encoded HTML string if rendered Markdown pages should include a shared footer:
+
+```bash
+FOOTER="$(printf '%s' '<a href="https://example.com">example.com</a>' | base64)"
+```
+
 ---
 
 ## Common Usage

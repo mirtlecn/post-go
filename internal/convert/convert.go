@@ -2,18 +2,21 @@ package convert
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/skip2/go-qrcode"
 	"html"
-	"post-go/internal/assets"
+	"os"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"post-go/internal/assets"
+
 	callouts "github.com/ZMT-Creative/gm-alert-callouts"
 	katex "github.com/libkush/goldmark-katex"
+	"github.com/skip2/go-qrcode"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
@@ -192,6 +195,34 @@ func formatMarkdownLinkDestination(destination string) string {
 	return "<" + destination + ">"
 }
 
+func getConfiguredFooterHTML() string {
+	encodedFooter := strings.TrimSpace(os.Getenv("FOOTER"))
+	if encodedFooter == "" {
+		return ""
+	}
+	footerHTML, ok := decodeFooterBase64(encodedFooter)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(footerHTML)
+}
+
+func decodeFooterBase64(encoded string) (string, bool) {
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	for _, encoding := range encodings {
+		decoded, err := encoding.DecodeString(encoded)
+		if err == nil && utf8.Valid(decoded) {
+			return string(decoded), true
+		}
+	}
+	return "", false
+}
+
 // CapitalizeTopicLabel uppercases the first rune of a topic label.
 func CapitalizeTopicLabel(label string) string {
 	if label == "" {
@@ -207,6 +238,7 @@ func CapitalizeTopicLabel(label string) string {
 func wrapHTML(body, alertsStyle, pageTitle string) string {
 	darkBg := "#0d1117"
 	katexCSS := "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+	footerHTML := getConfiguredFooterHTML()
 
 	// 动态标签容器
 	var extraHead strings.Builder
@@ -233,6 +265,16 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + katexCSS + "\">\n")
 	}
 
+	bodyLayoutCSS := "  body { box-sizing: border-box; min-width: 200px; max-width: 838px; margin: 0 auto; padding: 45px;"
+	footerCSS := ""
+	footerMarkup := ""
+	if footerHTML != "" {
+		bodyLayoutCSS += " min-height: 100vh; display: flex; flex-direction: column;"
+		footerCSS = "  .post-footer { flex-shrink: 0; margin-top: auto; padding-top: 48px; text-align: center; font-size: 12px; }\n"
+		footerMarkup = "<footer class=\"markdown-body post-footer\">\n" + footerHTML + "\n</footer>\n"
+	}
+	bodyLayoutCSS += " }\n"
+
 	return "<!doctype html>\n" +
 		"<html>\n" +
 		"<head>\n" +
@@ -242,11 +284,12 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		"<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("base_css") + "\">\n" +
 		extraHead.String() +
 		"<style>\n" +
-		"  body { box-sizing: border-box; min-width: 200px; max-width: 838px; margin: 0 auto; padding: 45px; }\n" +
+		bodyLayoutCSS +
 		"  .markdown-body .markdown-alert { padding: 0.5rem 1rem; }\n" +
 		alertsStyle + "\n" +
 		"  @media (prefers-color-scheme: dark) { body { background-color: " + darkBg + "; } }\n" +
 		"  @media (max-width: 767px) { body { max-width: 100%; padding: 25px; } }\n" +
+		footerCSS +
 		"</style>\n" +
 		"</head>\n" +
 		"<body>\n" +
@@ -254,6 +297,7 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		body +
 		"\n</article>\n" +
 		extraBody.String() +
+		footerMarkup +
 		"</body>\n" +
 		"</html>"
 }

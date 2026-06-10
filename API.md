@@ -721,6 +721,7 @@ The HTML shell includes:
 - embedded base CSS
 - inline layout CSS
 - `<article class="markdown-body">`
+- optional `<footer class="markdown-body post-footer">` when `FOOTER` is configured
 
 The layout is intentionally simple:
 
@@ -728,6 +729,8 @@ The layout is intentionally simple:
 - max width `838px`
 - desktop padding `45px`
 - mobile padding `25px`
+
+`FOOTER` is read from the environment as a base64-encoded HTML string. Blank values and decode failures are ignored. Decoded HTML is trimmed and inserted as raw HTML after the Markdown article and dynamic body assets.
 
 ### 5.5 Dynamic asset injection
 

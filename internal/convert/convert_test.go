@@ -1,10 +1,35 @@
 package convert
 
 import (
+	"encoding/base64"
+	"os"
 	"post-go/internal/assets"
 	"strings"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	_ = os.Unsetenv("FOOTER")
+	os.Exit(m.Run())
+}
+
+func withFooterEnv(t *testing.T, value *string) {
+	t.Helper()
+	previousValue, hadPreviousValue := os.LookupEnv("FOOTER")
+	if value == nil {
+		_ = os.Unsetenv("FOOTER")
+	} else {
+		t.Setenv("FOOTER", *value)
+		return
+	}
+	t.Cleanup(func() {
+		if hadPreviousValue {
+			_ = os.Setenv("FOOTER", previousValue)
+		} else {
+			_ = os.Unsetenv("FOOTER")
+		}
+	})
+}
 
 func TestConvertMarkdownToHTMLPreservesRawHTML(t *testing.T) {
 	output, err := ConvertMarkdownToHTML("Hello\n\n<script>alert('xss')</script>")
@@ -159,5 +184,81 @@ func TestConvertMarkdownToHTMLWithOptionsStripsYAMLFrontMatter(t *testing.T) {
 	}
 	if !strings.Contains(output, "<h1 id=\"body\">Body</h1>") {
 		t.Fatalf("expected markdown body to remain, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLOmitsFooterWhenUnsetBlankOrInvalidBase64(t *testing.T) {
+	withFooterEnv(t, nil)
+	output, err := ConvertMarkdownToHTML("# Hello")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if strings.Contains(output, "post-footer") {
+		t.Fatalf("expected footer to be omitted when FOOTER is unset, got %q", output)
+	}
+
+	blankFooter := " \n\t "
+	withFooterEnv(t, &blankFooter)
+	output, err = ConvertMarkdownToHTML("# Hello")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if strings.Contains(output, "post-footer") {
+		t.Fatalf("expected footer to be omitted when FOOTER is blank, got %q", output)
+	}
+
+	invalidFooter := "not base64 <a>footer</a>"
+	withFooterEnv(t, &invalidFooter)
+	output, err = ConvertMarkdownToHTML("# Hello")
+	if err != nil {
+		t.Fatalf("expected invalid footer env to be ignored, got %v", err)
+	}
+	if strings.Contains(output, "post-footer") {
+		t.Fatalf("expected footer to be omitted when FOOTER is invalid base64, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLInjectsConfiguredFooterHTML(t *testing.T) {
+	footer := base64.StdEncoding.EncodeToString([]byte(`  footer-e8c3a91f <a href="https://example.test/link-42">link-17b92</a>  `))
+	withFooterEnv(t, &footer)
+
+	output, err := ConvertMarkdownToHTML("# One\n\n## Two")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+
+	articleEndIndex := strings.Index(output, "</article>")
+	tocScriptIndex := strings.Index(output, assets.MustAssetURL("gfm_addon_js"))
+	footerIndex := strings.Index(output, `<footer class="markdown-body post-footer">`)
+	if footerIndex == -1 {
+		t.Fatalf("expected configured footer markup, got %q", output)
+	}
+	if articleEndIndex == -1 || articleEndIndex > footerIndex {
+		t.Fatalf("expected footer after article, got %q", output)
+	}
+	if tocScriptIndex == -1 || tocScriptIndex > footerIndex {
+		t.Fatalf("expected footer after dynamic body assets, got %q", output)
+	}
+	if !strings.Contains(output, "<footer class=\"markdown-body post-footer\">\nfooter-e8c3a91f <a href=\"https://example.test/link-42\">link-17b92</a>\n</footer>") {
+		t.Fatalf("expected trimmed raw footer html, got %q", output)
+	}
+	if !strings.Contains(output, "margin-top: auto;") {
+		t.Fatalf("expected footer layout css, got %q", output)
+	}
+	if !strings.Contains(output, "min-height: 100vh; display: flex; flex-direction: column;") {
+		t.Fatalf("expected body flex layout css, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLInjectsRawBase64Footer(t *testing.T) {
+	footer := base64.RawURLEncoding.EncodeToString([]byte(`footer-url-safe-2f65`))
+	withFooterEnv(t, &footer)
+
+	output, err := ConvertMarkdownToHTML("# Hello")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, "footer-url-safe-2f65") {
+		t.Fatalf("expected url-safe raw base64 footer to be decoded, got %q", output)
 	}
 }

@@ -14,6 +14,7 @@ cat >"$TMP_GO" <<'EOF'
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
@@ -57,6 +58,22 @@ func main() {
 	pass("topic home label")
 	mustContain("topic page title suffix", html, "<span style=\"color: #666;\">Howl Visual Draft</span>")
 	pass("topic page title suffix")
+
+	footerEnvValue := base64.StdEncoding.EncodeToString([]byte(`footer-smoke-c4f42 <a href="https://example.test/footer">footer link</a>`))
+	if err := os.Setenv("FOOTER", footerEnvValue); err != nil {
+		fail("set footer env", err.Error())
+	}
+	footerHTML, err := convert.ConvertMarkdownToHTML("# Footer")
+	if err != nil {
+		fail("convert footer html", err.Error())
+	}
+	if err := os.Unsetenv("FOOTER"); err != nil {
+		fail("unset footer env", err.Error())
+	}
+	mustContain("markdown footer wrapper", footerHTML, `<footer class="markdown-body post-footer">`)
+	pass("markdown footer wrapper")
+	mustContain("markdown footer content", footerHTML, `footer-smoke-c4f42 <a href="https://example.test/footer">footer link</a>`)
+	pass("markdown footer content")
 
 	markdown := topic.BuildIndexMarkdown("anime", "Anime", []topic.Item{
 		{
