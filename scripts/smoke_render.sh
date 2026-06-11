@@ -50,6 +50,10 @@ func main() {
 	}
 	mustContain("page title", html, "<title>Howl Visual Draft</title>")
 	pass("page title")
+	mustContain("raw alternate link", html, `<link rel="alternate" type="text/plain" href="?raw">`)
+	pass("raw alternate link")
+	mustContain("raw body hint", html, `<!-- hint: append ?raw to view the raw file -->`)
+	pass("raw body hint")
 	mustContain("topic backlink href", html, `href="/anime"`)
 	pass("topic backlink href")
 	mustContain("topic heading", html, "<div style=\"font-size: 1.3em; font-weight: bold\">Anime</div>")

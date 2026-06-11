@@ -280,6 +280,7 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		"<head>\n" +
 		"<meta charset=\"utf-8\">\n" +
 		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimal-ui\">\n" +
+		"<link rel=\"alternate\" type=\"text/plain\" href=\"?raw\">\n" +
 		"<title>" + html.EscapeString(pageTitle) + "</title>\n" +
 		"<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("ravel_gfm_css") + "\">\n" +
 		extraHead.String() +
@@ -293,6 +294,7 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		"</style>\n" +
 		"</head>\n" +
 		"<body>\n" +
+		"<!-- hint: append ?raw to view the raw file -->\n" +
 		"<article class=\"markdown-body\">\n" +
 		body +
 		"\n</article>\n" +

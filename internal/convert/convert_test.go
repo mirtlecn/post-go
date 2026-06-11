@@ -53,6 +53,35 @@ func TestConvertMarkdownToHTMLWithOptionsSetsPageTitle(t *testing.T) {
 	}
 }
 
+func TestConvertMarkdownToHTMLAddsRawReadHints(t *testing.T) {
+	output, err := ConvertMarkdownToHTMLWithOptions("# Hello", MarkdownOptions{
+		PageTitle: "Anime Archive",
+	})
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+
+	viewportIndex := strings.Index(output, `<meta name="viewport" content="width=device-width, initial-scale=1, minimal-ui">`)
+	alternateIndex := strings.Index(output, `<link rel="alternate" type="text/plain" href="?raw">`)
+	titleIndex := strings.Index(output, "<title>Anime Archive</title>")
+	if viewportIndex == -1 || alternateIndex == -1 || titleIndex == -1 {
+		t.Fatalf("expected viewport, raw alternate link, and title in output, got %q", output)
+	}
+	if !(viewportIndex < alternateIndex && alternateIndex < titleIndex) {
+		t.Fatalf("expected raw alternate link between viewport and title, got %q", output)
+	}
+
+	bodyIndex := strings.Index(output, "<body>")
+	hintIndex := strings.Index(output, "<!-- hint: append ?raw to view the raw file -->")
+	articleIndex := strings.Index(output, `<article class="markdown-body">`)
+	if bodyIndex == -1 || hintIndex == -1 || articleIndex == -1 {
+		t.Fatalf("expected body hint before article, got %q", output)
+	}
+	if !(bodyIndex < hintIndex && hintIndex < articleIndex) {
+		t.Fatalf("expected body hint before article, got %q", output)
+	}
+}
+
 func TestConvertMarkdownToHTMLWithOptionsAddsBackLink(t *testing.T) {
 	output, err := ConvertMarkdownToHTMLWithOptions("# Hello", MarkdownOptions{
 		PageTitle:      "Howl Visual Draft",
