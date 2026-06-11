@@ -21,6 +21,7 @@ type Config struct {
 	SecretAccessKey string
 	Bucket          string
 	Region          string
+	ForcePathStyle  bool
 }
 
 func (c Config) IsConfigured() bool {
@@ -48,14 +49,22 @@ func NewClient(conf Config) (*Client, error) {
 		}
 	}
 	mc, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(conf.AccessKeyID, conf.SecretAccessKey, ""),
-		Secure: secure,
-		Region: conf.Region,
+		Creds:        credentials.NewStaticV4(conf.AccessKeyID, conf.SecretAccessKey, ""),
+		Secure:       secure,
+		Region:       conf.Region,
+		BucketLookup: bucketLookupForConfig(conf),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Client{mc: mc, conf: conf}, nil
+}
+
+func bucketLookupForConfig(conf Config) minio.BucketLookupType {
+	if conf.ForcePathStyle {
+		return minio.BucketLookupPath
+	}
+	return minio.BucketLookupAuto
 }
 
 // UploadFile streams file into S3 and returns object key.

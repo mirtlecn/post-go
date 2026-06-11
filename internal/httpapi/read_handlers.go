@@ -89,7 +89,7 @@ func (h *Handler) handleTopicLookupAuthed(w http.ResponseWriter, r *http.Request
 		return
 	}
 	utils.JSON(w, http.StatusOK, ItemResponse{
-		SURL:    h.getDomain(r) + "/" + topicName,
+		SURL:    buildPublicSURL(h.getDomain(r), topicName),
 		Path:    topicName,
 		Type:    topicType,
 		Title:   topicDisplayTitle(topicName, storedValue),

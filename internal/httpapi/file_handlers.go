@@ -17,7 +17,7 @@ import (
 )
 
 func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allowOverwrite bool) {
-	maxFileBytes := int64(h.Cfg.MaxFileMB) * 1024 * 1024
+	maxFileBytes := int64(h.Cfg.MaxFileMB * 1024 * 1024)
 	r.Body = http.MaxBytesReader(w, r.Body, maxFileBytes+1024*1024)
 	if err := r.ParseMultipartForm(maxFileBytes + 1024*1024); err != nil {
 		requestLogger{}.Warnf("multipart parse failed: %v", err)
@@ -199,7 +199,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request, allow
 	}
 	isExport := isExportRequest(r)
 	utils.JSON(w, status, CreateResponse{
-		SURL:    h.getDomain(r) + "/" + pathVal,
+		SURL:    buildPublicSURL(h.getDomain(r), pathVal),
 		Path:    pathVal,
 		Type:    "file",
 		Title:   titleVal,

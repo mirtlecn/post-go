@@ -240,7 +240,7 @@ func (h *Handler) handleJSONCreate(w http.ResponseWriter, r *http.Request, allow
 	}
 
 	result := CreateResponse{
-		SURL:    h.getDomain(r) + "/" + pathVal,
+		SURL:    buildPublicSURL(h.getDomain(r), pathVal),
 		Path:    pathVal,
 		Type:    contentType,
 		Title:   titleVal,
@@ -354,7 +354,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		status = http.StatusOK
 	}
 	utils.JSON(w, status, CreateResponse{
-		SURL:    h.getDomain(r) + "/" + topicName,
+		SURL:    buildPublicSURL(h.getDomain(r), topicName),
 		Path:    topicName,
 		Type:    topicType,
 		Title:   topicTitle,

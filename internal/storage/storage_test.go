@@ -151,8 +151,12 @@ func TestNormalizePath(t *testing.T) {
 		{input: "note/", expected: "note"},
 		{input: "/note/", expected: "note"},
 		{input: "///", expected: "/"},
+		{input: "////", expected: "/"},
 		{input: "/", expected: "/"},
+		{input: "post///", expected: "post"},
+		{input: "//post///", expected: "post"},
 		{input: "topic//entry", expected: "topic//entry"},
+		{input: "post///entry", expected: "post///entry"},
 	}
 
 	for _, test := range tests {

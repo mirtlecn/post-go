@@ -39,6 +39,8 @@ Required:
 - `LINKS_REDIS_URL`
 
 If you need file uploads, configure S3-compatible object storage as well.
+`MAX_CONTENT_SIZE_KB` defaults to `1024`; `MAX_FILE_SIZE_MB` defaults to `3.5`.
+When `S3_ENDPOINT` is set, S3 clients use path-style bucket lookup by default; set `S3_FORCE_PATH_STYLE=false` to disable it.
 
 ### 2) Run locally
 

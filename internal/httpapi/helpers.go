@@ -234,9 +234,16 @@ func (h *Handler) getDomain(r *http.Request) string {
 	return storage.GetDomainWithBase(r, h.Cfg.BaseDomain)
 }
 
+func buildPublicSURL(domain, path string) string {
+	if path == "/" {
+		return domain + "/"
+	}
+	return domain + "/" + path
+}
+
 func buildItemResponse(domain, path string, storedValue storage.StoredValue, ttl *int64, isExport bool) ItemResponse {
 	return ItemResponse{
-		SURL:    domain + "/" + path,
+		SURL:    buildPublicSURL(domain, path),
 		Path:    path,
 		Type:    storedValue.Type,
 		Title:   storedValue.Title,

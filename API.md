@@ -67,17 +67,16 @@ Optional but required for file upload:
 - `S3_ACCESS_KEY_ID`
 - `S3_SECRET_ACCESS_KEY`
 - `S3_BUCKET_NAME`
-- `S3_REGION`
+- `S3_REGION`, default `auto`
 
 Important config values:
 
 - `PORT`, default `3000`
-- `MAX_CONTENT_SIZE_KB`, code default `500`
-- `MAX_FILE_SIZE_MB`, default `10`
+- `MAX_CONTENT_SIZE_KB`, default `1024`
+- `MAX_FILE_SIZE_MB`, default `3.5`
+- `S3_FORCE_PATH_STYLE`, defaults to `true` when `S3_ENDPOINT` is set, otherwise `false`
 - `BASE_DOMAIN`, optional public domain for generated `surl` fields
 - `POST_DEBUG`, default `false`
-
-The sample file `.env.example` sets `MAX_CONTENT_SIZE_KB=512`, but the code default is `500`. If you do not set the env var, runtime uses `500`.
 
 ### 2.3 Local startup flow
 

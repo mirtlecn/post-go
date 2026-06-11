@@ -33,6 +33,7 @@ type fakeRedisStore struct {
 	setExErrKeys    map[string]error
 	delErr          error
 	delErrKeys      map[string]error
+	delKeys         []string
 	unlinkErr       error
 	existsResult    int64
 	existsErr       error
@@ -124,6 +125,7 @@ func (f *fakeRedisStore) SetEx(ctx context.Context, key string, value any, expir
 }
 
 func (f *fakeRedisStore) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	f.delKeys = append(f.delKeys, keys...)
 	for _, key := range keys {
 		if err, ok := f.delErrKeys[key]; ok {
 			return redis.NewIntResult(0, err)
@@ -353,6 +355,92 @@ func TestHandleJSONCreateNormalizesPathBeforeStore(t *testing.T) {
 	}
 	if store.lastSetKey != "surl:note" {
 		t.Fatalf("expected normalized key surl:note, got %q", store.lastSetKey)
+	}
+}
+
+func TestHandleJSONCreateNormalizesPostNodeSlashCasesBeforeStore(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		key      string
+		path     string
+		expected string
+	}{
+		{
+			name:     "slash only becomes root path",
+			body:     `{"url":"hello","path":"////"}`,
+			key:      "surl:/",
+			path:     "/",
+			expected: "http://example.com/",
+		},
+		{
+			name:     "trailing slashes are trimmed",
+			body:     `{"url":"hello","path":"post///"}`,
+			key:      "surl:post",
+			path:     "post",
+			expected: "http://example.com/post",
+		},
+		{
+			name:     "internal slashes are preserved",
+			body:     `{"url":"hello","path":"post///entry"}`,
+			key:      "surl:post///entry",
+			path:     "post///entry",
+			expected: "http://example.com/post///entry",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeRedisStore{}
+			handler := newTestHandler(store)
+			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+
+			handler.handleJSONCreate(response, request, false)
+
+			if response.Code != http.StatusCreated {
+				t.Fatalf("expected status 201, got %d, body: %s", response.Code, response.Body.String())
+			}
+			if store.lastSetKey != test.key {
+				t.Fatalf("expected normalized key %q, got %q", test.key, store.lastSetKey)
+			}
+			var body CreateResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode response: %v", err)
+			}
+			if body.Path != test.path || body.SURL != test.expected {
+				t.Fatalf("unexpected response path/surl: %+v", body)
+			}
+		})
+	}
+}
+
+func TestHandleJSONUpdateNormalizesTrailingSlashesBeforeStore(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:post": {value: `{"type":"text","content":"old","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"updated","path":"post///"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, true)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	if store.lastSetKey != "surl:post" {
+		t.Fatalf("expected normalized update key surl:post, got %q", store.lastSetKey)
+	}
+	var body CreateResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Path != "post" || body.SURL != "http://example.com/post" {
+		t.Fatalf("unexpected response path/surl: %+v", body)
 	}
 }
 
@@ -1590,6 +1678,32 @@ func TestHandleLookupAuthedReturnsTTLForExpiringItem(t *testing.T) {
 	}
 }
 
+func TestHandleLookupAuthedNormalizesSlashOnlyPath(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:/": {value: `{"type":"text","content":"hello","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"////"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected slash-only lookup body to be handled")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	var body ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body.Path != "/" || body.SURL != "http://example.com/" {
+		t.Fatalf("unexpected response path/surl: %+v", body)
+	}
+}
+
 func TestHandleDeleteRejectsTopicHomeWithoutTopicType(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -1605,6 +1719,27 @@ func TestHandleDeleteRejectsTopicHomeWithoutTopicType(t *testing.T) {
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+}
+
+func TestHandleDeleteNormalizesTrailingSlashesBeforeDelete(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:post": {value: `{"type":"text","content":"hello","created":"2022-10-11T01:11:01Z"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"post///"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleDelete(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	if len(store.delKeys) != 1 || store.delKeys[0] != "surl:post" {
+		t.Fatalf("expected normalized delete key surl:post, got %+v", store.delKeys)
 	}
 }
 
@@ -3077,15 +3212,16 @@ func newFileLookupStore(path, objectKey string) *fakeRedisStore {
 func newTestHandlerWithDeps(store redisStore, fileStore fileObjectStore) *Handler {
 	return &Handler{
 		Cfg: core.AppConfig{
-			RedisURL:       "redis://unit-test",
-			SecretKey:      "secret",
-			MaxContentKB:   500,
-			MaxFileMB:      10,
-			S3Endpoint:     "https://s3.example.com",
-			S3AccessKeyID:  "key",
-			S3SecretAccess: "secret",
-			S3Bucket:       "bucket",
-			S3Region:       "auto",
+			RedisURL:         "redis://unit-test",
+			SecretKey:        "secret",
+			MaxContentKB:     500,
+			MaxFileMB:        3.5,
+			S3Endpoint:       "https://s3.example.com",
+			S3AccessKeyID:    "key",
+			S3SecretAccess:   "secret",
+			S3Bucket:         "bucket",
+			S3Region:         "auto",
+			S3ForcePathStyle: true,
 		},
 		deps: handlerDependencies{
 			getRedisStore: func(url string) (redisStore, error) {

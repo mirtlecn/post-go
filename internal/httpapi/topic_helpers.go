@@ -89,7 +89,7 @@ func (h *Handler) buildTopicSummaryResponse(ctx context.Context, rdb redisStore,
 		return ItemResponse{}, err
 	}
 	return ItemResponse{
-		SURL:    domain + "/" + topicName,
+		SURL:    buildPublicSURL(domain, topicName),
 		Path:    topicName,
 		Type:    topicType,
 		Title:   topicDisplayTitle(topicName, storedValue),
