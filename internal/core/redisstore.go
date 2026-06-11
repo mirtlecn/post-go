@@ -9,9 +9,8 @@ import (
 
 // RedisStore captures the Redis operations used by file cache helpers.
 type RedisStore interface {
-	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
 	SetEx(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
 	Unlink(ctx context.Context, keys ...string) *redis.IntCmd
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
-	TxPipeline() redis.Pipeliner
 }

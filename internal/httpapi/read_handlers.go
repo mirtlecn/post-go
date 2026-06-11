@@ -168,21 +168,42 @@ func (h *Handler) handleWildcardLookupAuthed(w http.ResponseWriter, r *http.Requ
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	items := make([]ItemResponse, 0, len(keys))
-	domain := h.getDomain(r)
-	isExport := isExportRequest(r)
+	type wildcardEntry struct {
+		key         string
+		path        string
+		storedValue storage.StoredValue
+	}
+	entries := make([]wildcardEntry, 0, len(keys))
+	ttlKeys := make([]string, 0, len(keys))
 	for _, key := range keys {
 		path := strings.TrimPrefix(key, storage.LinksPrefix)
 		storedValue, exists := storedValues[key]
 		if !exists || storedValue.Type == topicType {
 			continue
 		}
-		ttlDuration, err := rdb.TTL(ctx, key).Result()
-		if err != nil {
-			requestLogger{}.Warnf("wildcard lookup ttl failed: %s (%v)", path, err)
+		entries = append(entries, wildcardEntry{
+			key:         key,
+			path:        path,
+			storedValue: storedValue,
+		})
+		ttlKeys = append(ttlKeys, key)
+	}
+	ttls, err := batchGetTTLs(ctx, rdb, ttlKeys)
+	if err != nil {
+		requestLogger{}.Errorf("wildcard lookup ttl batch failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	items := make([]ItemResponse, 0, len(entries))
+	domain := h.getDomain(r)
+	isExport := isExportRequest(r)
+	for _, entry := range entries {
+		ttlDuration, ok := ttls[entry.key]
+		if !ok {
+			requestLogger{}.Warnf("wildcard lookup ttl failed: %s", entry.path)
 			continue
 		}
-		items = append(items, buildItemResponse(domain, path, storedValue, ttlMinutesFromDuration(ttlDuration), isExport))
+		items = append(items, buildItemResponse(domain, entry.path, entry.storedValue, ttlMinutesFromDuration(ttlDuration), isExport))
 	}
 	utils.JSON(w, http.StatusOK, items)
 }
@@ -338,12 +359,13 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	type listEntry struct {
-		item    ItemResponse
-		sortAt  time.Time
-		hasTime bool
+	type listValue struct {
+		key         string
+		path        string
+		storedValue storage.StoredValue
 	}
-	links := make([]listEntry, 0, len(keys))
+	values := make([]listValue, 0, len(keys))
+	ttlKeys := make([]string, 0, len(keys))
 	for _, key := range keys {
 		path := strings.TrimPrefix(key, storage.LinksPrefix)
 		storedValue, exists := storedValues[key]
@@ -351,22 +373,43 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 			requestLogger{}.Warnf("list get missed: %s", key)
 			continue
 		}
-		ttlSeconds, err := rdb.TTL(ctx, key).Result()
-		if err != nil {
-			requestLogger{}.Warnf("list ttl failed: %s (%v)", key, err)
+		values = append(values, listValue{
+			key:         key,
+			path:        path,
+			storedValue: storedValue,
+		})
+		ttlKeys = append(ttlKeys, key)
+	}
+	ttls, err := batchGetTTLs(ctx, rdb, ttlKeys)
+	if err != nil {
+		requestLogger{}.Errorf("list ttl batch failed: %v", err)
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	type listEntry struct {
+		item    ItemResponse
+		sortAt  time.Time
+		hasTime bool
+	}
+	links := make([]listEntry, 0, len(values))
+	for _, value := range values {
+		ttlSeconds, ok := ttls[value.key]
+		if !ok {
+			requestLogger{}.Warnf("list ttl failed: %s", value.key)
 			continue
 		}
+		storedValue := value.storedValue
 		content := responseContent(storedValue.Type, storedValue.Content, isExport)
 		ttl := ttlMinutesFromDuration(ttlSeconds)
 		if storedValue.Type == topicType {
-			count, err := countTopicItems(ctx, rdb, path)
+			count, err := countTopicItems(ctx, rdb, value.path)
 			if err != nil {
-				requestLogger{}.Warnf("topic count failed: %s (%v)", path, err)
+				requestLogger{}.Warnf("topic count failed: %s (%v)", value.path, err)
 				continue
 			}
 			content = topicCountString(count)
 		}
-		item := buildItemResponse(domain, path, storedValue, ttl, isExport)
+		item := buildItemResponse(domain, value.path, storedValue, ttl, isExport)
 		if storedValue.Type == topicType {
 			item.Content = content
 		}

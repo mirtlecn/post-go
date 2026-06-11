@@ -389,7 +389,12 @@ Keys:
 
 ```text
 cache:file:<path>
-cache:filemeta:<path>
+```
+
+Value format:
+
+```text
+[4-byte metadata length, big endian][metadata JSON][raw body bytes]
 ```
 
 File cache TTL is fixed at:
@@ -398,10 +403,8 @@ File cache TTL is fixed at:
 
 Cache metadata stores:
 
-- content type
-- content length
-- encoding
-- checksum
+- `ct`: content type
+- `cl`: content length
 
 This cache is separate from the main object storage and separate from the topic zset model.
 

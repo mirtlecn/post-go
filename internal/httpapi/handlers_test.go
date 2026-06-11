@@ -26,38 +26,42 @@ import (
 )
 
 type fakeRedisStore struct {
-	getResults   map[string]fakeStringResult
-	setErr       error
-	setExErr     error
-	setErrKeys   map[string]error
-	setExErrKeys map[string]error
-	delErr       error
-	delErrKeys   map[string]error
-	unlinkErr    error
-	existsResult int64
-	existsErr    error
-	scanKeys     []string
-	scanCursor   uint64
-	ttlResult    time.Duration
-	ttlErr       error
-	mgetResults  []any
-	mgetErr      error
-	mgetCalls    [][]string
-	zaddErr      error
-	zremErr      error
-	zremKeys     []string
-	zremMembers  []any
-	zcardResult  int64
-	zcardErr     error
-	zrangeResult []redis.Z
-	zrangeErr    error
-	zaddKeys     []string
-	zaddMembers  []redis.Z
-	lastSetKey   string
-	lastSetValue string
-	lastSetTTL   time.Duration
-	setKeys      []string
-	setValues    []string
+	getResults      map[string]fakeStringResult
+	setErr          error
+	setExErr        error
+	setErrKeys      map[string]error
+	setExErrKeys    map[string]error
+	delErr          error
+	delErrKeys      map[string]error
+	unlinkErr       error
+	existsResult    int64
+	existsErr       error
+	scanKeys        []string
+	scanCursor      uint64
+	ttlResult       time.Duration
+	ttlErr          error
+	ttlResults      map[string]time.Duration
+	ttlErrKeys      map[string]error
+	mgetResults     []any
+	mgetErr         error
+	mgetCalls       [][]string
+	pipelineTTLKeys []string
+	pipelineExecErr error
+	zaddErr         error
+	zremErr         error
+	zremKeys        []string
+	zremMembers     []any
+	zcardResult     int64
+	zcardErr        error
+	zrangeResult    []redis.Z
+	zrangeErr       error
+	zaddKeys        []string
+	zaddMembers     []redis.Z
+	lastSetKey      string
+	lastSetValue    string
+	lastSetTTL      time.Duration
+	setKeys         []string
+	setValues       []string
 }
 
 type fakeStringResult struct {
@@ -163,6 +167,16 @@ func (f *fakeRedisStore) Exists(ctx context.Context, keys ...string) *redis.IntC
 }
 
 func (f *fakeRedisStore) TTL(ctx context.Context, key string) *redis.DurationCmd {
+	return f.ttlResultForKey(key)
+}
+
+func (f *fakeRedisStore) ttlResultForKey(key string) *redis.DurationCmd {
+	if err, ok := f.ttlErrKeys[key]; ok {
+		return redis.NewDurationResult(0, err)
+	}
+	if ttl, ok := f.ttlResults[key]; ok {
+		return redis.NewDurationResult(ttl, nil)
+	}
 	return redis.NewDurationResult(f.ttlResult, f.ttlErr)
 }
 
@@ -187,7 +201,31 @@ func (f *fakeRedisStore) MGet(ctx context.Context, keys ...string) *redis.SliceC
 }
 
 func (f *fakeRedisStore) TxPipeline() redis.Pipeliner {
-	return redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"}).TxPipeline()
+	return &fakePipeliner{store: f}
+}
+
+type fakePipeliner struct {
+	redis.Pipeliner
+	store *fakeRedisStore
+	cmds  []*redis.DurationCmd
+}
+
+func (p *fakePipeliner) TTL(ctx context.Context, key string) *redis.DurationCmd {
+	p.store.pipelineTTLKeys = append(p.store.pipelineTTLKeys, key)
+	cmd := p.store.ttlResultForKey(key)
+	p.cmds = append(p.cmds, cmd)
+	return cmd
+}
+
+func (p *fakePipeliner) Exec(ctx context.Context) ([]redis.Cmder, error) {
+	if p.store.pipelineExecErr != nil {
+		return nil, p.store.pipelineExecErr
+	}
+	cmds := make([]redis.Cmder, len(p.cmds))
+	for i, cmd := range p.cmds {
+		cmds[i] = cmd
+	}
+	return cmds, nil
 }
 
 func (f *fakeRedisStore) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
@@ -1284,6 +1322,42 @@ func TestHandleLookupAuthedFromBodyReturnsWildcardItems(t *testing.T) {
 	if body[0].TTL == nil || *body[0].TTL != 3 {
 		t.Fatalf("expected ttl on wildcard response, got %+v", body[0])
 	}
+	expectedTTLKeys := []string{"surl:note-a", "surl:note-b"}
+	if strings.Join(store.pipelineTTLKeys, ",") != strings.Join(expectedTTLKeys, ",") {
+		t.Fatalf("expected wildcard ttl keys %v, got %v", expectedTTLKeys, store.pipelineTTLKeys)
+	}
+}
+
+func TestHandleLookupAuthedFromBodySkipsWildcardItemWhenTTLCommandFails(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note-a", "surl:note-b"},
+		getResults: map[string]fakeStringResult{
+			"surl:note-a": {value: `{"type":"text","content":"hello","title":"A","created":"2022-10-11T01:11:01Z"}`},
+			"surl:note-b": {value: `{"type":"text","content":"world","title":"B","created":"2022-10-12T01:11:01Z"}`},
+		},
+		ttlResult: 3 * time.Minute,
+		ttlErrKeys: map[string]error{
+			"surl:note-b": errors.New("ttl failed"),
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(`{"path":"note*"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	if !handler.handleLookupAuthedFromBody(response, request) {
+		t.Fatalf("expected wildcard lookup to be handled")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	var body []ItemResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(body) != 1 || body[0].Path != "note-a" {
+		t.Fatalf("expected only item with ttl result, got %+v", body)
+	}
 }
 
 func TestHandleLookupAuthedFromBodyReturnsWildcardItemsWithExportContent(t *testing.T) {
@@ -1391,6 +1465,9 @@ func TestHandleListUsesMGetForStoredValues(t *testing.T) {
 	if strings.Join(store.mgetCalls[0], ",") != strings.Join(expectedMGetKeys, ",") {
 		t.Fatalf("expected list mget keys %v, got %v", expectedMGetKeys, store.mgetCalls[0])
 	}
+	if strings.Join(store.pipelineTTLKeys, ",") != strings.Join(expectedMGetKeys, ",") {
+		t.Fatalf("expected list ttl keys %v, got %v", expectedMGetKeys, store.pipelineTTLKeys)
+	}
 	var body []ItemResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -1406,6 +1483,29 @@ func TestHandleListUsesMGetForStoredValues(t *testing.T) {
 	}
 	if body[0].Created != "2023-10-11T01:11:01Z" || body[1].Created != "2022-10-11T01:11:01Z" {
 		t.Fatalf("expected created values, got %+v", body)
+	}
+}
+
+func TestHandleListReturnsInternalErrorWhenTTLBatchFails(t *testing.T) {
+	store := &fakeRedisStore{
+		scanKeys: []string{"surl:note"},
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello","title":"Greeting","created":"2023-10-11T01:11:01Z"}`},
+		},
+		pipelineExecErr: errors.New("pipeline failed"),
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+
+	handler.handleList(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "internal" {
+		t.Fatalf("unexpected error payload: %+v", body)
 	}
 }
 

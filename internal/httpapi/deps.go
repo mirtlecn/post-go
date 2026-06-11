@@ -15,7 +15,8 @@ import (
 
 type redisStore interface {
 	core.RedisStore
-	Get(ctx context.Context, key string) *redis.StringCmd
+	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
+	TxPipeline() redis.Pipeliner
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	TTL(ctx context.Context, key string) *redis.DurationCmd

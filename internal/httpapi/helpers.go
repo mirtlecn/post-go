@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"post-go/internal/storage"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -196,6 +198,29 @@ func scanAllKeys(ctx context.Context, rdb redisStore, pattern string) ([]string,
 	}
 	sort.Strings(keys)
 	return keys, nil
+}
+
+func batchGetTTLs(ctx context.Context, rdb redisStore, keys []string) (map[string]time.Duration, error) {
+	ttls := make(map[string]time.Duration, len(keys))
+	if len(keys) == 0 {
+		return ttls, nil
+	}
+	pipe := rdb.TxPipeline()
+	cmds := make([]*redis.DurationCmd, len(keys))
+	for i, key := range keys {
+		cmds[i] = pipe.TTL(ctx, key)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, err
+	}
+	for i, cmd := range cmds {
+		ttl, err := cmd.Result()
+		if err != nil {
+			continue
+		}
+		ttls[keys[i]] = ttl
+	}
+	return ttls, nil
 }
 
 func responseContent(typ, content string, isExport bool) string {
