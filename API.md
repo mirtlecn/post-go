@@ -783,6 +783,8 @@ Public display behavior:
 - `file`: raw file response
 - `text`: plain text
 
+Add `?raw` to public `GET` or `HEAD` reads to return the stored `content` text directly. Topic pages ignore `?raw` and keep rendering the topic index HTML.
+
 So "frontend behavior" is actually distributed across content types instead of being one central browser app.
 
 ### 5.7 Topic page rendering

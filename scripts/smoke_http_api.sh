@@ -85,6 +85,12 @@ REDIRECT_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-link")"
 assert_contains "$REDIRECT_HEADERS" "Location: https://example.com/path?q=1" "public url redirect"
 pass "public url redirect"
 
+LINK_RAW="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-link?raw")"
+if [[ "$LINK_RAW" != "https://example.com/path?q=1" ]]; then
+  fail "public url raw" "expected raw url, got: $LINK_RAW"
+fi
+pass "public url raw"
+
 api_json POST "$POST_BASE_URL/create" '{"url":"example.com/path","path":"'"$SMOKE_PREFIX"'-badurl","type":"url"}'
 assert_status 400 "reject invalid url"
 assert_jq '.code == "invalid_request"' "reject invalid url code"
@@ -115,12 +121,26 @@ EMBEDDED_ASSET_BODY="$(curl -sS -H "Referer: $POST_BASE_URL/$SMOKE_PREFIX-md" "$
 test -n "$EMBEDDED_ASSET_BODY"
 pass "rendered html"
 
+MD_RAW="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-md?raw")"
+if [[ "$MD_RAW" != $'# Title\n\nHello from Markdown' ]]; then
+  fail "public markdown raw" "expected raw markdown, got: $MD_RAW"
+fi
+pass "public markdown raw"
+
 api_json POST "$POST_BASE_URL/create" '{"url":"<p>hi</p>","path":"'"$SMOKE_PREFIX"'-html","type":"html"}'
 assert_status 201 "create raw html"
 assert_jq '.title == ""' "create raw html empty title"
 RAW_HTML="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-html")"
 assert_contains "$RAW_HTML" "<p>hi</p>" "public html read"
 pass "public html read"
+
+HTML_RAW_HEADERS="$(curl -sSI "$POST_BASE_URL/$SMOKE_PREFIX-html?raw")"
+assert_contains "$HTML_RAW_HEADERS" "Content-Type: text/plain; charset=utf-8" "public html raw content type"
+HTML_RAW="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-html?raw")"
+if [[ "$HTML_RAW" != "<p>hi</p>" ]]; then
+  fail "public html raw" "expected raw html text, got: $HTML_RAW"
+fi
+pass "public html raw"
 
 api_json POST "$POST_BASE_URL/create" '{"url":"https://example.com/qr","path":"'"$SMOKE_PREFIX"'-qr","convert":"qrcode"}'
 assert_status 201 "create qrcode"
@@ -131,6 +151,12 @@ pass "create qrcode"
 QR_TEXT="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-qr")"
 assert_contains "$QR_TEXT" "Scan this QR code" "public qrcode text"
 pass "public qrcode text"
+
+QR_RAW="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-qr?raw")"
+if [[ "$QR_RAW" != "https://example.com/qr" ]]; then
+  fail "public qrcode raw" "expected qrcode source, got: $QR_RAW"
+fi
+pass "public qrcode raw"
 
 api_json POST "$POST_BASE_URL/create" '{"url":"first","path":"'"$SMOKE_PREFIX"'-conflict","title":"First Title"}'
 assert_status 201 "create conflict seed"
@@ -286,6 +312,13 @@ FILE_EXT_VALUE="$(redis_get "surl:$SMOKE_PREFIX-file.txt")"
 assert_contains "$FILE_EXT_VALUE" '"type":"file"' "redis file json type"
 assert_contains "$FILE_EXT_VALUE" '"title":"Upload Attachment"' "redis file title"
 pass "file upload"
+
+FILE_OBJECT_KEY="$(jq -r '.content' <<<"$FILE_EXT_VALUE")"
+FILE_RAW="$(curl -sS "$POST_BASE_URL/$SMOKE_PREFIX-file.txt?raw")"
+if [[ "$FILE_RAW" != "$FILE_OBJECT_KEY" ]]; then
+  fail "public file raw" "expected object key $FILE_OBJECT_KEY, got: $FILE_RAW"
+fi
+pass "public file raw"
 
 FILE_AUTO_BODY="$TMP_DIR/file-auto.body"
 FILE_AUTO_STATUS="$TMP_DIR/file-auto.status"

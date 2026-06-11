@@ -75,6 +75,13 @@ TOPIC_HOME_HEADERS="$(curl -sSI "$POST_BASE_URL/$TOPIC")"
 assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=600, s-maxage=600" "topic home cache"
 pass "topic home cache"
 
+TOPIC_HOME_RAW="$(curl -sS "$POST_BASE_URL/$TOPIC?raw")"
+assert_contains "$TOPIC_HOME_RAW" "<title>Anime Archive</title>" "topic home raw still renders"
+TOPIC_HOME_RAW_HEADERS="$(curl -sSI "$POST_BASE_URL/$TOPIC?raw")"
+assert_contains "$TOPIC_HOME_RAW_HEADERS" "Content-Type: text/html; charset=utf-8" "topic home raw keeps html content type"
+assert_contains "$TOPIC_HOME_RAW_HEADERS" "Cache-Control: public, max-age=600, s-maxage=600" "topic home raw keeps cache"
+pass "topic home raw still renders"
+
 api_json POST "$POST_BASE_URL/create" '{"path":"'"$TOPIC"'","type":"topic","ttl":10}'
 assert_status 400 "reject topic ttl"
 assert_jq '.error == "topic does not support ttl"' "reject topic ttl body"
@@ -107,6 +114,12 @@ assert_contains "$ITEM_HTML" "<div style=\"font-size: 1.3em; font-weight: bold\"
 assert_contains "$ITEM_HTML" "href=\"/$TOPIC\"" "topic item backlink href"
 assert_contains "$ITEM_HTML" "<strong>Home</strong>" "topic item home link label"
 pass "topic item render"
+
+ITEM_RAW="$(curl -sS "$POST_BASE_URL/$TOPIC/castle-notes?raw")"
+if [[ "$ITEM_RAW" != $'# Castle\n\nHello' ]]; then
+  fail "topic item raw" "expected raw topic item markdown, got: $ITEM_RAW"
+fi
+pass "topic item raw"
 
 api_json POST "$POST_BASE_URL/create" '{"path":"'"$TOPIC"'/screening-signup","url":"https://example.com/screening","type":"url","created":"2023-10-11"}'
 assert_status 201 "create topic item via full path"

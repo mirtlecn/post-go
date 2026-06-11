@@ -249,6 +249,10 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		return
 	}
 	storedValue := storage.ParseStoredValue(stored)
+	if isRawPublicRead(r) && storedValue.Type != topicType {
+		writeRawContent(w, r, storedValue.Content)
+		return
+	}
 	switch storedValue.Type {
 	case "url":
 		utils.Redirect(w, r, storedValue.Content, false)
@@ -292,6 +296,23 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 	default:
 		utils.Text(w, http.StatusOK, storedValue.Content, true)
 		return
+	}
+}
+
+func isRawPublicRead(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Query().Has("raw")
+}
+
+func writeRawContent(w http.ResponseWriter, r *http.Request, content string) {
+	body := []byte(content)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Length", utils.Itoa64(int64(len(body))))
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", publicCacheControl)
+	}
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(body)
 	}
 }
 

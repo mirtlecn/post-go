@@ -2560,6 +2560,242 @@ func TestServeHTTPRendersStoredQRCode(t *testing.T) {
 	}
 }
 
+func TestServeHTTPRawURLReturnsContentWithoutRedirect(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:link": {value: `{"type":"url","content":"https://example.com/path?q=1","title":"Link"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/link?raw", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Location") != "" {
+		t.Fatalf("expected no redirect location, got %q", response.Header().Get("Location"))
+	}
+	if response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatalf("expected raw content type, got %q", response.Header().Get("Content-Type"))
+	}
+	if response.Body.String() != "https://example.com/path?q=1" {
+		t.Fatalf("expected raw url body without newline, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRawMarkdownReturnsStoredMarkdown(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: storage.BuildStoredValue(storage.StoredValue{
+				Type:    "md",
+				Content: "# Hello\n\nraw markdown",
+				Title:   "Greeting",
+			})},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/note?raw=1", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Body.String() != "# Hello\n\nraw markdown" {
+		t.Fatalf("expected raw markdown body, got %q", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "<article") || strings.Contains(response.Body.String(), "<h1") {
+		t.Fatalf("expected unrendered markdown, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRawHTMLReturnsPlainText(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:page": {value: `{"type":"html","content":"<p>hi</p>","title":"Page"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/page?raw", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatalf("expected raw content type, got %q", response.Header().Get("Content-Type"))
+	}
+	if response.Header().Get("Content-Type") == "text/html; charset=utf-8" {
+		t.Fatalf("expected raw html not to use text/html")
+	}
+	if response.Body.String() != "<p>hi</p>" {
+		t.Fatalf("expected raw html text, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRawQRCodeReturnsSourceText(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:qr": {value: `{"type":"qrcode","content":"https://example.com/qr","title":"QR"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/qr?raw", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Body.String() != "https://example.com/qr" {
+		t.Fatalf("expected raw qrcode source, got %q", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "Scan this QR code") {
+		t.Fatalf("expected raw qrcode source without rendered qr, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRawFileReturnsObjectKeyWithoutS3(t *testing.T) {
+	store := newFileLookupStore("manual.pdf", "post/default/manual.pdf")
+	fileStore := &fakeFileStore{getObjectBody: "should not be read"}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	handler.Cfg.S3Endpoint = ""
+	handler.Cfg.S3AccessKeyID = ""
+	handler.Cfg.S3SecretAccess = ""
+	handler.Cfg.S3Bucket = ""
+	request := httptest.NewRequest(http.MethodGet, "/manual.pdf?raw", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	if response.Body.String() != "post/default/manual.pdf" {
+		t.Fatalf("expected raw object key, got %q", response.Body.String())
+	}
+	if len(fileStore.getObjectCalls) != 0 {
+		t.Fatalf("expected raw file read to avoid file store, got %+v", fileStore.getObjectCalls)
+	}
+}
+
+func TestServeHTTPRawTopicStillRendersTopicHome(t *testing.T) {
+	topicMarkdown := topic.BuildIndexMarkdown("anime", "Anime Archive", []topic.Item{
+		{
+			Path:      "castle-notes",
+			Type:      "md",
+			Title:     "Castle Notes",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: storage.BuildStoredValue(storage.StoredValue{
+				Type:    topicType,
+				Content: topicMarkdown,
+				Title:   "Anime Archive",
+			})},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/anime?raw", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Cache-Control") != topicCacheControl {
+		t.Fatalf("expected topic cache header %q, got %q", topicCacheControl, response.Header().Get("Cache-Control"))
+	}
+	if response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Fatalf("expected topic html content type, got %q", response.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(response.Body.String(), "<title>Anime Archive</title>") {
+		t.Fatalf("expected rendered topic home, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPHeadRawReturnsHeadersOnly(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: storage.BuildStoredValue(storage.StoredValue{
+				Type:    "text",
+				Content: "hello 世界",
+			})},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodHead, "/note?raw", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Content-Length") != "12" {
+		t.Fatalf("expected byte length 12, got %q", response.Header().Get("Content-Length"))
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("expected empty HEAD body, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRootHeadRawReturnsHeadersOnly(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:/": {value: `{"type":"text","content":"root"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodHead, "/?raw", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Header().Get("Content-Length") != "4" {
+		t.Fatalf("expected root raw length 4, got %q", response.Header().Get("Content-Length"))
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("expected empty HEAD body, got %q", response.Body.String())
+	}
+}
+
+func TestServeHTTPRawFalseStillEnablesRawMode(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"text","content":"hello"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/note?raw=false", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if response.Body.String() != "hello" {
+		t.Fatalf("expected raw body without newline, got %q", response.Body.String())
+	}
+	if response.Header().Get("Content-Length") != "5" {
+		t.Fatalf("expected content length 5, got %q", response.Header().Get("Content-Length"))
+	}
+}
+
 func TestServeHTTPRejectsDirectEmbeddedAssetAccess(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
 	request := httptest.NewRequest(http.MethodGet, "/asset/ravel_gfm_css", nil)
