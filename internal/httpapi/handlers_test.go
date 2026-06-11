@@ -2743,6 +2743,33 @@ func TestServeHTTPAddsCharsetForCachedShellFile(t *testing.T) {
 	}
 }
 
+func TestServeHTTPAddsCharsetForCachedTextFile(t *testing.T) {
+	store := newFileLookupStore("note.txt", "post/default/note.txt")
+	fileStore := &fakeFileStore{}
+	handler := newTestHandlerWithDeps(store, fileStore)
+	handler.deps.getFileCache = func(ctx context.Context, rdb redisStore, path string) (*core.FileCacheItem, error) {
+		return &core.FileCacheItem{
+			Buffer:        []byte("hello\n"),
+			ContentType:   "text/plain",
+			ContentLength: 6,
+		}, nil
+	}
+	request := httptest.NewRequest(http.MethodGet, "/note.txt", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("expected cached text content type with utf-8 charset, got %q", got)
+	}
+	if len(fileStore.getObjectCalls) != 0 {
+		t.Fatalf("expected cache hit to avoid s3 fetch, got %+v", fileStore.getObjectCalls)
+	}
+}
+
 func TestServeHTTPPreservesSVGContentTypeFromS3(t *testing.T) {
 	store := newFileLookupStore("icon.svg", "post/default/icon.svg")
 	fileStore := &fakeFileStore{
