@@ -20,5 +20,5 @@ run: clean
 smoke: build
 	./scripts/smoke_all.sh
 
-assets-sync:
-	go run ./scripts/update_embedded_assets.go
+assets-sync assets-sync-optional:
+	@echo "embedded assets are provided by github.com/mirtlecn/gfm-addons"

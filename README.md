@@ -44,7 +44,6 @@ If you need file uploads, configure S3-compatible object storage as well.
 
 ```bash
 cp .env.example .env.local
-make assets-sync
 make
 ./post-server
 ```

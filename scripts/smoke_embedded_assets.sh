@@ -13,9 +13,9 @@ configure_redis "$REDIS_URL"
 echo "Using POST_BASE_URL=$POST_BASE_URL"
 echo "Using Redis DB=$REDIS_DB"
 
-BASE_ASSET_PATH="/asset/md-base-7f7c1c5a.css"
+BASE_ASSET_PATH="/asset/ravel_gfm_css"
 UNKNOWN_ASSET_PATH="/asset/not-exist.txt"
-RESERVED_INPUT_PATH="asset/md-base-7f7c1c5a.css"
+RESERVED_INPUT_PATH="asset/ravel_gfm_css"
 INTERNAL_REFERER="$POST_BASE_URL/internal-page"
 
 DIRECT_ASSET_BODY="$TMP_DIR/direct-asset.body"

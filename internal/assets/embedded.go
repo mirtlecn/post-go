@@ -1,25 +1,22 @@
 package assets
 
 import (
-	"embed"
-	"encoding/json"
 	"fmt"
 	"path"
+
+	gfmaddons "github.com/mirtlecn/gfm-addons"
 )
 
 type md2HTMLAsset struct {
 	Key         string `json:"key"`
 	RoutePath   string `json:"route_path"`
 	FileName    string `json:"file_name"`
+	File        string `json:"file"`
 	ContentType string `json:"content_type"`
-	SourceLink  string `json:"source_link"`
 	content     []byte
 }
 
-//go:generate go run ../../scripts/update_embedded_assets.go
-
-//go:embed manifest.json files/*
-var embeddedAssetFS embed.FS
+const assetRoutePrefix = "/asset/"
 
 var (
 	md2HTMLAssetsByKey   map[string]md2HTMLAsset
@@ -42,27 +39,39 @@ func InitError() error {
 }
 
 func loadMD2HTMLAssets() (map[string]md2HTMLAsset, map[string]md2HTMLAsset, error) {
-	data, err := embeddedAssetFS.ReadFile("manifest.json")
-	if err != nil {
-		return nil, nil, fmt.Errorf("read asset manifest: %w", err)
+	addonAssets := gfmaddons.Assets()
+	if len(addonAssets) == 0 {
+		return nil, nil, fmt.Errorf("gfm-addons asset manifest is empty")
 	}
 
-	var manifest []md2HTMLAsset
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return nil, nil, fmt.Errorf("parse asset manifest: %w", err)
-	}
+	assetsByKey := make(map[string]md2HTMLAsset, len(addonAssets))
+	assetsByRoute := make(map[string]md2HTMLAsset, len(addonAssets))
+	for _, addonAsset := range addonAssets {
+		if addonAsset.Key == "" || addonAsset.File == "" || addonAsset.ContentType == "" {
+			return nil, nil, fmt.Errorf("gfm-addons asset manifest entry is incomplete: %+v", addonAsset)
+		}
+		content, _, err := gfmaddons.ReadAsset(addonAsset.Key)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read gfm-addons asset %s: %w", addonAsset.Key, err)
+		}
 
-	assetsByKey := make(map[string]md2HTMLAsset, len(manifest))
-	assetsByRoute := make(map[string]md2HTMLAsset, len(manifest))
-	for _, asset := range manifest {
-		if asset.Key == "" || asset.RoutePath == "" || asset.FileName == "" || asset.ContentType == "" {
+		asset := md2HTMLAsset{
+			Key:         addonAsset.Key,
+			RoutePath:   assetRoutePrefix + addonAsset.Key,
+			FileName:    path.Base(addonAsset.File),
+			File:        addonAsset.File,
+			ContentType: addonAsset.ContentType,
+			content:     content,
+		}
+		if _, exists := assetsByKey[asset.Key]; exists {
+			return nil, nil, fmt.Errorf("duplicate embedded asset key: %s", asset.Key)
+		}
+		if _, exists := assetsByRoute[asset.RoutePath]; exists {
+			return nil, nil, fmt.Errorf("duplicate embedded asset route: %s", asset.RoutePath)
+		}
+		if asset.RoutePath == assetRoutePrefix {
 			return nil, nil, fmt.Errorf("asset manifest entry is incomplete: %+v", asset)
 		}
-		content, err := embeddedAssetFS.ReadFile(path.Join("files", asset.FileName))
-		if err != nil {
-			return nil, nil, fmt.Errorf("read asset file %s: %w", asset.FileName, err)
-		}
-		asset.content = content
 		assetsByKey[asset.Key] = asset
 		assetsByRoute[asset.RoutePath] = asset
 	}
@@ -72,7 +81,7 @@ func loadMD2HTMLAssets() (map[string]md2HTMLAsset, map[string]md2HTMLAsset, erro
 
 func MustAssetURL(key string) string {
 	if initErr != nil {
-		panic(fmt.Sprintf("embedded assets are not ready: %v; run `go run ./scripts/update_embedded_assets.go`", initErr))
+		panic(fmt.Sprintf("embedded assets are not ready: %v; check github.com/mirtlecn/gfm-addons", initErr))
 	}
 	asset, ok := md2HTMLAssetsByKey[key]
 	if !ok {

@@ -34,16 +34,16 @@ This file captures repository-specific rules that are easy for agents to miss.
 
 ## Embedded Assets
 
-- Embedded frontend assets are generated, not hand-maintained.
-- Run `make assets-sync` after changing source assets or anything that affects embedded asset output.
-- CI and release workflows both run `make assets-sync` before building artifacts.
+- Embedded frontend assets are provided by `github.com/mirtlecn/gfm-addons`.
+- `make assets-sync` is a compatibility no-op; update `gfm-addons` and bump the Go dependency when asset content changes.
+- CI and release workflows do not regenerate embedded assets in this repository.
 
 ## CI And Release
 
-- CI runs `make assets-sync` and `go test ./...`.
+- CI runs `go test ./...`.
 - CI also runs a GoReleaser snapshot build on every push and pull request.
 - Release is driven by pushing a `v*` git tag.
-- Release workflow runs GoReleaser after `make assets-sync`.
+- Release workflow runs GoReleaser.
 
 ## Runtime Assumptions
 
@@ -51,7 +51,6 @@ This file captures repository-specific rules that are easy for agents to miss.
 - File uploads require S3-compatible storage configuration.
 - Local manual startup usually follows:
   - `cp .env.example .env.local`
-  - `make assets-sync`
   - `make`
   - `./post-server`
 

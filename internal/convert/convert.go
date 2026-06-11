@@ -248,8 +248,8 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 	reHeaders := regexp.MustCompile(`(?i)<h[1-6]`)
 	headerMatches := reHeaders.FindAllString(body, -1)
 	if len(headerMatches) >= 2 {
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("gfm_addon_css") + "\">\n")
-		extraBody.WriteString("<script src=\"" + assets.MustAssetURL("gfm_addon_js") + "\"></script>\n")
+		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("gfm_addons_css") + "\">\n")
+		extraBody.WriteString("<script src=\"" + assets.MustAssetURL("gfm_addons_js") + "\"></script>\n")
 	}
 
 	// 2. 检查代码高亮
@@ -281,7 +281,7 @@ func wrapHTML(body, alertsStyle, pageTitle string) string {
 		"<meta charset=\"utf-8\">\n" +
 		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimal-ui\">\n" +
 		"<title>" + html.EscapeString(pageTitle) + "</title>\n" +
-		"<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("base_css") + "\">\n" +
+		"<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("ravel_gfm_css") + "\">\n" +
 		extraHead.String() +
 		"<style>\n" +
 		bodyLayoutCSS +

@@ -21,8 +21,8 @@ func main() {
 		port = "3000"
 	}
 	if err := assets.InitError(); err != nil {
-		fmt.Println("Error: Embedded asset files are missing or incomplete.")
-		fmt.Println("Run: go run ./scripts/update_embedded_assets.go")
+		fmt.Println("Error: Embedded assets are unavailable.")
+		fmt.Println("Check dependency: github.com/mirtlecn/gfm-addons")
 		fmt.Printf("Details: %v\n", err)
 		os.Exit(1)
 	}

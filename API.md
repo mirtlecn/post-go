@@ -85,16 +85,13 @@ Typical local startup flow:
 
 ```bash
 cp .env.example .env.local
-make assets-sync
 make build
 ./post-server
 ```
 
-Why `make assets-sync` is required:
+Embedded assets are provided by `github.com/mirtlecn/gfm-addons`.
 
-- frontend assets are embedded into the Go binary
-- the server refuses to start if embedded assets are missing or incomplete
-- asset sync is implemented by `scripts/update_embedded_assets.go`
+`make assets-sync` is kept as a compatibility no-op for older local workflows. When asset content changes, publish a new `gfm-addons` version and bump the Go dependency in this repository.
 
 If you only need text, short links, Markdown, HTML, QR code, and topic features, Redis is enough.
 
@@ -107,7 +104,7 @@ The `Makefile` defines this workflow:
 - `make build`: delete old binary, then build `./cmd/post-server`
 - `make test`: run `make build`, then `go test ./...`
 - `make smoke`: run `make build`, then `./scripts/smoke_all.sh`
-- `make assets-sync`: regenerate embedded assets
+- `make assets-sync`: compatibility no-op; assets come from `gfm-addons`
 
 `scripts/smoke_all.sh` is the real regression entrypoint. It does:
 
@@ -156,7 +153,7 @@ That enables request-level logs from `internal/httpapi/logging.go`, including:
 Useful startup observations:
 
 - `Loaded env from: .env.local` means config file was loaded
-- asset missing error means you need `make assets-sync`
+- embedded asset dependency errors mean `github.com/mirtlecn/gfm-addons` is missing or invalid
 - missing env error means `LINKS_REDIS_URL` or `SECRET_KEY` is not set
 - `env: PORT=... LINKS_REDIS_URL=...` means server is about to listen
 
@@ -692,13 +689,7 @@ That makes Post-go closer to a content server than a classic frontend-backend sp
 
 ### 5.2 Embedded asset model
 
-Embedded assets are declared in `internal/assets/manifest.json` and loaded by `internal/assets/embedded.go`.
-
-They are embedded with:
-
-```go
-//go:embed manifest.json files/*
-```
+Embedded assets are declared and embedded by `github.com/mirtlecn/gfm-addons`. `internal/assets/embedded.go` adapts that package into Post-go's internal route lookup model.
 
 Current asset categories include:
 
@@ -706,16 +697,14 @@ Current asset categories include:
 - highlight.js CSS and JS
 - GitHub-flavored Markdown addon CSS and JS
 
-These assets are generated and synced by `scripts/update_embedded_assets.go`.
-
-They are not intended to be maintained by hand.
+They are not maintained in this repository. Update `gfm-addons`, publish a new version, then bump this repository's Go dependency.
 
 ### 5.3 Reserved asset routes
 
-Embedded assets are served from hashed paths such as:
+Embedded assets are served from stable key paths such as:
 
 ```text
-/asset/md-base-7f7c1c5a.css
+/asset/ravel_gfm_css
 ```
 
 Behavior:

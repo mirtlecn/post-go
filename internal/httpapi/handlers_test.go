@@ -2427,7 +2427,7 @@ func TestServeHTTPRendersStoredQRCode(t *testing.T) {
 
 func TestServeHTTPRejectsDirectEmbeddedAssetAccess(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodGet, "/asset/md-base-7f7c1c5a.css", nil)
+	request := httptest.NewRequest(http.MethodGet, "/asset/ravel_gfm_css", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -2443,7 +2443,7 @@ func TestServeHTTPRejectsDirectEmbeddedAssetAccess(t *testing.T) {
 
 func TestServeHTTPReturnsEmbeddedAssetForSameOriginReferer(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodGet, "/asset/md-base-7f7c1c5a.css", nil)
+	request := httptest.NewRequest(http.MethodGet, "/asset/ravel_gfm_css", nil)
 	request.Host = "example.com"
 	request.Header.Set("Referer", "http://example.com/note")
 	response := httptest.NewRecorder()
@@ -2466,7 +2466,7 @@ func TestServeHTTPReturnsEmbeddedAssetForSameOriginReferer(t *testing.T) {
 
 func TestServeHTTPReturnsEmbeddedAssetHeadersForHEAD(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodHead, "/asset/highlight-core-b7ec7622.js", nil)
+	request := httptest.NewRequest(http.MethodHead, "/asset/highlight_js", nil)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
 	response := httptest.NewRecorder()
 
@@ -2482,7 +2482,7 @@ func TestServeHTTPReturnsEmbeddedAssetHeadersForHEAD(t *testing.T) {
 
 func TestServeHTTPRejectsUnsupportedMethodForReservedAssetPath(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodDelete, "/asset/md-base-7f7c1c5a.css", nil)
+	request := httptest.NewRequest(http.MethodDelete, "/asset/ravel_gfm_css", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -2600,7 +2600,7 @@ func TestServeHTTPReturnsHTMLWithDefaultPublicCacheHeader(t *testing.T) {
 func TestHandleJSONCreateRejectsReservedAssetPath(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)
-	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"asset/md-base-7f7c1c5a.css","type":"text"}`))
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"asset/ravel_gfm_css","type":"text"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -2618,7 +2618,7 @@ func TestHandleJSONCreateRejectsReservedAssetPath(t *testing.T) {
 func TestHandleDeleteRejectsReservedAssetPath(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)
-	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"asset/md-base-7f7c1c5a.css","type":"text"}`))
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"asset/ravel_gfm_css","type":"text"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 

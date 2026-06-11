@@ -6,6 +6,7 @@ require (
 	github.com/ZMT-Creative/gm-alert-callouts v0.0.0-20250903201322-bd2ef18a4d6d
 	github.com/libkush/goldmark-katex v0.3.4
 	github.com/minio/minio-go/v7 v7.2.0
+	github.com/mirtlecn/gfm-addons v0.1.2
 	github.com/redis/go-redis/v9 v9.20.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/yuin/goldmark v1.8.2

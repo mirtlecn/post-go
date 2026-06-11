@@ -97,7 +97,7 @@ func TestConvertMarkdownToHTMLUsesEmbeddedBaseAsset(t *testing.T) {
 	if strings.Contains(output, "cdn.jsdelivr.net") {
 		t.Fatalf("expected no external asset host, got %q", output)
 	}
-	if !strings.Contains(output, assets.MustAssetURL("base_css")) {
+	if !strings.Contains(output, assets.MustAssetURL("ravel_gfm_css")) {
 		t.Fatalf("expected embedded base asset url, got %q", output)
 	}
 }
@@ -123,10 +123,10 @@ func TestConvertMarkdownToHTMLAddsEmbeddedTOCAssetsWhenMultipleHeadersExist(t *t
 	if err != nil {
 		t.Fatalf("expected conversion to succeed, got %v", err)
 	}
-	if !strings.Contains(output, assets.MustAssetURL("gfm_addon_css")) {
+	if !strings.Contains(output, assets.MustAssetURL("gfm_addons_css")) {
 		t.Fatalf("expected toc css, got %q", output)
 	}
-	if !strings.Contains(output, assets.MustAssetURL("gfm_addon_js")) {
+	if !strings.Contains(output, assets.MustAssetURL("gfm_addons_js")) {
 		t.Fatalf("expected toc js, got %q", output)
 	}
 }
@@ -228,7 +228,7 @@ func TestConvertMarkdownToHTMLInjectsConfiguredFooterHTML(t *testing.T) {
 	}
 
 	articleEndIndex := strings.Index(output, "</article>")
-	tocScriptIndex := strings.Index(output, assets.MustAssetURL("gfm_addon_js"))
+	tocScriptIndex := strings.Index(output, assets.MustAssetURL("gfm_addons_js"))
 	footerIndex := strings.Index(output, `<footer class="markdown-body post-footer">`)
 	if footerIndex == -1 {
 		t.Fatalf("expected configured footer markup, got %q", output)
