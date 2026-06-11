@@ -223,6 +223,15 @@ assert_status 201 "create nested topic"
 assert_jq '.title == "Anime Archive 2026"' "create nested topic title"
 pass "create nested topic"
 
+PARENT_TOPIC_MEMBERS="$(redis_zrange "topic:$TOPIC:items")"
+assert_contains "$PARENT_TOPIC_MEMBERS" "2026" "parent topic indexes nested topic"
+pass "parent topic indexes nested topic"
+
+api_json POST "$POST_BASE_URL/create" '{"topic":"'"$TOPIC"'","path":"'"$NESTED_TOPIC"'/wrong-parent","url":"bad","type":"text"}'
+assert_status 400 "reject explicit parent topic for nested topic item"
+assert_jq '.code == "invalid_request" and .error == "`path` belongs to a nested topic"' "reject explicit parent topic for nested topic item body"
+pass "reject explicit parent topic for nested topic item"
+
 api_json POST "$POST_BASE_URL/create" '{"path":"'"$NESTED_TOPIC"'/post-1","url":"nested body","type":"text"}'
 assert_status 201 "nested topic full path matches longest prefix"
 assert_jq '.path == "'"$NESTED_TOPIC"'/post-1"' "nested topic full path response"
@@ -234,8 +243,26 @@ assert_jq '.content == "1"' "nested topic count after full path create body"
 pass "nested topic count after full path create"
 
 api_json POST "$POST_BASE_URL/query" '{"path":"'"$TOPIC"'","type":"topic"}'
-assert_status 200 "parent topic count excludes nested topic item"
-assert_jq '.content == "1"' "parent topic count excludes nested topic item body"
-pass "parent topic count excludes nested topic item"
+assert_status 200 "parent topic count includes nested topic only"
+assert_jq '.content == "2"' "parent topic count includes nested topic only body"
+pass "parent topic count includes nested topic only"
+
+api_json POST "$POST_BASE_URL/update" '{"path":"'"$TOPIC"'","type":"topic"}'
+assert_status 200 "refresh parent topic skips nested topic item"
+assert_jq '.content == "2"' "refresh parent topic skips nested topic item body"
+pass "refresh parent topic skips nested topic item"
+
+PARENT_TOPIC_MEMBERS="$(redis_zrange "topic:$TOPIC:items")"
+assert_contains "$PARENT_TOPIC_MEMBERS" "2026" "parent topic keeps nested topic member"
+if [[ "$PARENT_TOPIC_MEMBERS" == *"2026/post-1"* ]]; then
+  fail "parent topic excludes nested topic item member" "members: $PARENT_TOPIC_MEMBERS"
+fi
+pass "parent topic excludes nested topic item member"
+
+TOPIC_RAW="$(redis_get "surl:$TOPIC")"
+if ! jq -e '.content | contains("[Anime Archive 2026](</'"$NESTED_TOPIC"'>) §") and (contains("post-1") | not)' >/dev/null <<<"$TOPIC_RAW"; then
+  fail "parent topic markdown skips nested topic item" "value: $TOPIC_RAW"
+fi
+pass "parent topic markdown skips nested topic item"
 
 echo "Topic API smoke checks completed successfully."

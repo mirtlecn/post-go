@@ -35,7 +35,7 @@ func isDeleteValidationError(err error) bool {
 		return false
 	}
 	switch err.Error() {
-	case topicHomeManagedError, "topic does not exist", "`topic` and `path` must match", "`path` is required", "`path` must not be \"/\" when `topic` is provided", "`path` must not contain empty topic members":
+	case topicHomeManagedError, nestedTopicMemberError, "topic does not exist", "`topic` and `path` must match", "`path` is required", "`path` must not be \"/\" when `topic` is provided", "`path` must not contain empty topic members":
 		return true
 	default:
 		return false
@@ -103,6 +103,9 @@ func (h *Handler) deleteTopic(ctx context.Context, rdb redisStore, topicName str
 		return deleteItemResult{}, err
 	}
 	if err := rdb.Del(ctx, storage.LinksPrefix+topicName, topicItemsKey(topicName)).Err(); err != nil {
+		return deleteItemResult{}, err
+	}
+	if err := h.removeChildTopicFromParentIndex(ctx, rdb, topicName); err != nil {
 		return deleteItemResult{}, err
 	}
 	return deleteItemResult{

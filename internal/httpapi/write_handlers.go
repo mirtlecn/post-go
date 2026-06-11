@@ -64,7 +64,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		switch err.Error() {
-		case topicHomeManagedError, "topic does not exist", "`topic` and `path` must match", "`path` is required", "`path` must not be \"/\" when `topic` is provided", "`path` must not contain empty topic members":
+		case topicHomeManagedError, nestedTopicMemberError, "topic does not exist", "`topic` and `path` must match", "`path` is required", "`path` must not be \"/\" when `topic` is provided", "`path` must not contain empty topic members":
 			utils.Error(w, http.StatusBadRequest, "invalid_request", err.Error(), nil, nil)
 		default:
 			requestLogger{}.Errorf("delete failed: path=%s topic=%s err=%v", pathVal, topicVal, err)
@@ -337,6 +337,10 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		return
 	}
 	if err := h.refreshTopicIndex(ctx, rdb, topicName); err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
+		return
+	}
+	if err := h.syncParentTopicIndexForChildTopic(ctx, rdb, topicName); err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}

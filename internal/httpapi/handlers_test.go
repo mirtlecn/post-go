@@ -579,6 +579,10 @@ func TestHandleJSONCreateStoresTopicTitle(t *testing.T) {
 
 func TestHandleJSONCreateTopicHomeAdoptsExistingChildren(t *testing.T) {
 	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime/castle":      {value: `{"type":"text","content":"castle","title":"Castle"}`},
+			"surl:anime/2026/post-1": {value: `{"type":"text","content":"post","title":"Post 1"}`},
+		},
 		scanKeys: []string{
 			"surl:anime/castle",
 			"surl:anime/2026/post-1",
@@ -598,6 +602,41 @@ func TestHandleJSONCreateTopicHomeAdoptsExistingChildren(t *testing.T) {
 	members := zaddMemberNames(store.zaddMembers)
 	if !slicesContain(members, "castle") || !slicesContain(members, "2026/post-1") {
 		t.Fatalf("expected adopt members in zadd calls, got %+v", members)
+	}
+}
+
+func TestRefreshTopicIndexAdoptsDirectChildTopicAndSkipsNestedTopicItems(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime":                  {value: `{"type":"topic","content":"","title":"Anime"}`},
+			"surl:anime/2026":             {value: `{"type":"topic","content":"","title":"Anime 2026"}`},
+			"surl:anime/2026/post-1":      {value: `{"type":"text","content":"nested","title":"Nested Post"}`},
+			"surl:anime/orphan":           {value: `{"type":"text","content":"orphan","title":"Orphan"}`},
+			"surl:anime/hi":               {value: `{"type":"topic","content":"","title":"Hi"}`},
+			"surl:anime/hi/topic3":        {value: `{"type":"topic","content":"","title":"Topic 3"}`},
+			"surl:anime/hi/topic3/post-1": {value: `{"type":"text","content":"deep","title":"Deep Post"}`},
+		},
+		scanKeys: []string{
+			"surl:anime/2026",
+			"surl:anime/2026/post-1",
+			"surl:anime/orphan",
+			"surl:anime/hi",
+			"surl:anime/hi/topic3",
+			"surl:anime/hi/topic3/post-1",
+		},
+	}
+	handler := newTestHandler(store)
+
+	if err := handler.refreshTopicIndex(context.Background(), store, "anime"); err != nil {
+		t.Fatalf("expected refresh to succeed, got %v", err)
+	}
+
+	members := zaddMemberNames(store.zaddMembers)
+	if !slicesContain(members, "2026") || !slicesContain(members, "orphan") || !slicesContain(members, "hi") {
+		t.Fatalf("expected refresh to adopt direct members, got %+v", members)
+	}
+	if slicesContain(members, "2026/post-1") || slicesContain(members, "hi/topic3") || slicesContain(members, "hi/topic3/post-1") {
+		t.Fatalf("expected refresh to skip nested topic members, got %+v", members)
 	}
 }
 
@@ -629,7 +668,9 @@ func TestHandleJSONUpdatePreservesTopicTitleWhenTitleOmitted(t *testing.T) {
 func TestHandleJSONUpdateTopicAdoptsExistingChildren(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
-			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
+			"surl:anime":             {value: `{"type":"topic","content":"<html></html>","title":"Anime Archive","created":"2022-10-11T01:11:01Z"}`},
+			"surl:anime/orphan":      {value: `{"type":"text","content":"orphan","title":"Orphan"}`},
+			"surl:anime/2026/post-2": {value: `{"type":"text","content":"post","title":"Post 2"}`},
 		},
 		scanKeys: []string{
 			"surl:anime/orphan",
@@ -649,6 +690,31 @@ func TestHandleJSONUpdateTopicAdoptsExistingChildren(t *testing.T) {
 	members := zaddMemberNames(store.zaddMembers)
 	if !slicesContain(members, "orphan") || !slicesContain(members, "2026/post-2") {
 		t.Fatalf("expected refresh to adopt existing children, got %+v", members)
+	}
+}
+
+func TestHandleJSONCreateNestedTopicIndexesDirectParent(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime": {value: `{"type":"topic","content":"","title":"Anime"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"path":"anime/2026","type":"topic","title":"Anime 2026"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", response.Code)
+	}
+	members := zaddMemberNames(store.zaddMembers)
+	if !slicesContain(members, "2026") {
+		t.Fatalf("expected direct parent to index child topic, got %+v", members)
+	}
+	if store.lastSetKey != "surl:anime" {
+		t.Fatalf("expected direct parent topic to be rebuilt last, got %q", store.lastSetKey)
 	}
 }
 
@@ -826,6 +892,29 @@ func TestHandleJSONCreateRejectsEmptyTopicMemberSegment(t *testing.T) {
 	}
 }
 
+func TestHandleJSONCreateRejectsExplicitParentForNestedTopicItem(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime":      {value: `{"type":"topic","content":"","title":"Anime"}`},
+			"surl:anime/2026": {value: `{"type":"topic","content":"","title":"Anime 2026"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"topic":"anime","path":"anime/2026/post-1","url":"hello"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.handleJSONCreate(response, request, false)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := decodeErrorPayload(t, response)
+	if body.Code != "invalid_request" || body.Error != nestedTopicMemberError {
+		t.Fatalf("unexpected error payload: %+v", body)
+	}
+}
+
 func TestResolveTopicPathUsesLongestExistingTopicPrefix(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -847,6 +936,21 @@ func TestResolveTopicPathUsesLongestExistingTopicPrefix(t *testing.T) {
 	}
 	if resolved.RelativePath != "post-1" {
 		t.Fatalf("expected relative path post-1, got %+v", resolved)
+	}
+}
+
+func TestResolveTopicPathRejectsExplicitParentForNestedTopicItem(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:blog":      {value: `{"type":"topic","content":"","title":"blog"}`},
+			"surl:blog/2026": {value: `{"type":"topic","content":"","title":"blog/2026"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	_, err := handler.resolveTopicPath(context.Background(), store, "blog", "blog/2026/post-1")
+	if err == nil || err.Error() != nestedTopicMemberError {
+		t.Fatalf("expected nested topic error, got %v", err)
 	}
 }
 
@@ -975,6 +1079,43 @@ func TestRebuildTopicIndexRemovesStaleMembers(t *testing.T) {
 	}
 	if strings.Contains(stored.Content, "<html") || strings.Contains(stored.Content, "<body") || strings.Contains(stored.Content, "post-footer") {
 		t.Fatalf("expected stored topic markdown without full HTML chrome, got %q", stored.Content)
+	}
+}
+
+func TestRebuildTopicIndexRemovesNestedTopicMembers(t *testing.T) {
+	store := &fakeRedisStore{
+		zrangeResult: []redis.Z{
+			{Score: float64(time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC).Unix()), Member: "2026"},
+			{Score: float64(time.Date(2026, time.December, 22, 10, 0, 0, 0, time.UTC).Unix()), Member: "2026/post-1"},
+			{Score: float64(time.Date(2026, time.December, 21, 10, 0, 0, 0, time.UTC).Unix()), Member: "folder/post-2"},
+			{Score: float64(time.Date(2026, time.December, 20, 10, 0, 0, 0, time.UTC).Unix()), Member: "hi/topic3"},
+		},
+		getResults: map[string]fakeStringResult{
+			"surl:anime":               {value: `{"type":"topic","content":"","title":"Anime"}`},
+			"surl:anime/2026":          {value: `{"type":"topic","content":"","title":"Anime 2026","created":"2026-12-23T10:00:00Z"}`},
+			"surl:anime/2026/post-1":   {value: `{"type":"text","content":"nested","title":"Nested Post"}`},
+			"surl:anime/folder/post-2": {value: `{"type":"text","content":"folder","title":"Folder Post","created":"2026-12-21T10:00:00Z"}`},
+			"surl:anime/hi/topic3":     {value: `{"type":"topic","content":"","title":"Topic 3"}`},
+		},
+	}
+	handler := newTestHandler(store)
+
+	if err := handler.rebuildTopicIndex(context.Background(), store, "anime"); err != nil {
+		t.Fatalf("expected rebuild to succeed, got %v", err)
+	}
+
+	if !anySliceContains(store.zremMembers, "2026/post-1") || !anySliceContains(store.zremMembers, "hi/topic3") {
+		t.Fatalf("expected nested topic members to be removed, got %+v", store.zremMembers)
+	}
+	stored := storage.ParseStoredValue(store.lastSetValue)
+	if !strings.Contains(stored.Content, "[Anime 2026](</anime/2026>) § 2026-12-23") {
+		t.Fatalf("expected direct child topic to remain in index, got %q", stored.Content)
+	}
+	if !strings.Contains(stored.Content, "[Folder Post](</anime/folder/post-2>) ☰ 2026-12-21") {
+		t.Fatalf("expected non-topic nested member to remain in index, got %q", stored.Content)
+	}
+	if strings.Contains(stored.Content, "Nested Post") || strings.Contains(stored.Content, "Topic 3") {
+		t.Fatalf("expected nested topic members to be omitted from index, got %q", stored.Content)
 	}
 }
 
@@ -1364,6 +1505,36 @@ func TestHandleDeleteRejectsTopicHomeWithoutTopicType(t *testing.T) {
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+}
+
+func TestDeleteNestedTopicRemovesDirectParentIndexMember(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:anime":      {value: `{"type":"topic","content":"","title":"Anime"}`},
+			"surl:anime/2026": {value: `{"type":"topic","content":"","title":"Anime 2026","created":"2026-12-23T10:00:00Z"}`},
+		},
+		zcardResult: 1,
+		zrangeResult: []redis.Z{
+			{Score: 2, Member: "2026"},
+			{Score: 1, Member: "2026/post-1"},
+		},
+	}
+	handler := newTestHandler(store)
+
+	result, err := handler.deleteTopic(context.Background(), store, "anime/2026")
+	if err != nil {
+		t.Fatalf("expected delete to succeed, got %v", err)
+	}
+
+	if result.Path != "anime/2026" || result.StoredValue.Type != topicType {
+		t.Fatalf("unexpected delete result: %+v", result)
+	}
+	if !anySliceContains(store.zremMembers, "2026") || !anySliceContains(store.zremMembers, "2026/post-1") {
+		t.Fatalf("expected parent topic member to be removed, got %+v", store.zremMembers)
+	}
+	if store.lastSetKey != "surl:anime" {
+		t.Fatalf("expected parent topic to be rebuilt, got %q", store.lastSetKey)
 	}
 }
 
@@ -1801,6 +1972,15 @@ func TestHandleFileUploadTopicSyncDoesNotAdoptExistingChildren(t *testing.T) {
 }
 
 func slicesContain(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func anySliceContains(items []any, target string) bool {
 	for _, item := range items {
 		if item == target {
 			return true

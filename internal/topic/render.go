@@ -143,6 +143,8 @@ func typeMark(itemType string) string {
 		return "☰"
 	case "file":
 		return "◫"
+	case "topic":
+		return "§"
 	default:
 		return ""
 	}

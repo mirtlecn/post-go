@@ -266,14 +266,20 @@ surl:anime
 topic:anime:items
 surl:anime/castle
 surl:anime/howl
+surl:anime/2026
+topic:anime/2026:items
+surl:anime/2026/post-1
 ```
 
 The sorted set stores topic members by relative path:
 
 - member: `castle`
 - member: `howl`
+- member: `2026` when `anime/2026` is a direct child topic
 
 not full path.
+
+The parent topic sorted set does not store non-orphan entries that belong to a nested topic. For example, `topic:anime:items` stores `2026`, but not `2026/post-1` while `surl:anime/2026` is a topic.
 
 The set also contains a placeholder member:
 
@@ -288,7 +294,7 @@ The topic home object stores Markdown in `content`, not a full HTML page:
 ```json
 {
   "type": "topic",
-  "content": "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>\n\n<span style=\"color: #666;\">Home</span>\n\n\n\n\n\n\n- [Castle Notes](</anime/castle-notes>) 2026-12-23\n",
+  "content": "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>\n\n<span style=\"color: #666;\">Home</span>\n\n\n\n\n\n\n- [Anime Archive 2026](</anime/2026>) § 2026-12-23\n- [Castle Notes](</anime/castle-notes>) 2026-12-22\n",
   "title": "Anime Archive",
   "created": "2026-06-11T10:00:00Z"
 }
@@ -317,17 +323,22 @@ When you create a topic home:
 
 1. write `surl:<topic>` with `type=topic`
 2. scan existing keys matching `surl:<topic>/*`
-3. adopt them into `topic:<topic>:items`
+3. adopt direct members into `topic:<topic>:items`
 4. ensure placeholder member exists
 5. rebuild topic index Markdown
+6. if it is a direct child topic, add it to the direct parent's zset and rebuild the parent topic
 
 This means a topic can "adopt" old paths that already existed before the topic home was created.
 
-When you refresh a topic home with `POST /update` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching paths into `topic:<topic>:items`, ensures the placeholder member exists, and rebuilds the topic index Markdown.
+When you refresh a topic home with `POST /update` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching direct members into `topic:<topic>:items`, ensures the placeholder member exists, rebuilds the topic index Markdown, and refreshes the direct parent index if one exists.
+
+Direct child topic homes are adopted as parent members. Non-orphan entries under a nested topic are skipped. For example, while `anime/2026` is a topic, `anime/2026/post-1` belongs only to `anime/2026`, not to `anime`.
+
+When `topic` is provided explicitly, the server rejects writes that would cross into an existing nested topic. For example, `topic=anime` with `path=anime/2026/post-1` returns `invalid_request` while `anime/2026` is a topic. Omit `topic` or use `topic=anime/2026` for that item.
 
 Normal topic member writes and deletes do not run the adoption scan. They only update the known zset member for that write and rebuild the index. Use topic creation or a manual `type=topic` refresh when old existing paths need to be adopted.
 
-Every topic rebuild still removes stale zset members when the corresponding `surl:<topic>/<member>` key no longer exists.
+Every topic rebuild still removes stale zset members when the corresponding `surl:<topic>/<member>` key no longer exists. It also removes nested topic members such as `2026/post-1` from a parent zset while `surl:<topic>/2026` is still a topic.
 
 ### 3.6 Topic delete semantics
 
@@ -518,6 +529,7 @@ Special cases:
 
 - if `type=topic`, delete topic home and topic index only
 - if deleting a topic member, also update the topic zset and rebuilt topic Markdown
+- if deleting a direct child topic, remove that child topic member from the direct parent's zset and rebuild the parent
 - if deleting a file object and S3 is configured, the server tries to delete the object from storage too
 - if `path` ends with a single `*`, delete all matching items and return a summary object
 - wildcard delete returns `200` even when nothing matches
@@ -817,6 +829,7 @@ Type marks:
 - `url`: `↗`
 - `text` and `qrcode`: `☰`
 - `file`: `◫`
+- `topic`: `§`
 - `html` and `md`: no extra mark
 
 Display date uses:

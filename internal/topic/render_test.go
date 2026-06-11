@@ -299,3 +299,20 @@ func TestBuildIndexMarkdownUsesTextMarkForQRCode(t *testing.T) {
 		t.Fatalf("expected qrcode entry to use text mark, got %q", output)
 	}
 }
+
+func TestBuildIndexMarkdownUsesTopicMarkForTopic(t *testing.T) {
+	items := []Item{
+		{
+			Path:      "2026",
+			Type:      "topic",
+			Title:     "Anime Archive 2026",
+			UpdatedAt: time.Date(2026, time.December, 23, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	output := BuildIndexMarkdown("anime", "Anime", items)
+
+	if !strings.Contains(output, "[Anime Archive 2026](</anime/2026>) § 2026-12-23") {
+		t.Fatalf("expected topic entry to use topic mark, got %q", output)
+	}
+}

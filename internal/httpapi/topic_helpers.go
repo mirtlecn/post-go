@@ -54,6 +54,14 @@ func topicNameFromItemsKey(key string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(key, "topic:"), ":items")
 }
 
+func directParentTopic(topicName string) (string, string, bool) {
+	index := strings.LastIndex(topicName, "/")
+	if index <= 0 || index >= len(topicName)-1 {
+		return "", "", false
+	}
+	return topicName[:index], topicName[index+1:], true
+}
+
 func scanTopicNamesByPrefix(ctx context.Context, rdb redisStore, prefix string) ([]string, error) {
 	keys, err := scanAllKeys(ctx, rdb, "topic:"+prefix+"*:items")
 	if err != nil {
@@ -176,6 +184,13 @@ func (h *Handler) resolveTopicPath(ctx context.Context, rdb redisStore, topicNam
 		if hasEmptyPathSegment(pathVal) {
 			return resolved, errors.New("`path` must not contain empty topic members")
 		}
+		nestedTopicMember, err := h.isNestedTopicMember(ctx, rdb, topicName, pathVal, map[string]bool{})
+		if err != nil {
+			return resolved, err
+		}
+		if nestedTopicMember {
+			return resolved, errors.New(nestedTopicMemberError)
+		}
 		return resolvedTopicPath{
 			IsTopicItem:   true,
 			TopicName:     topicName,
@@ -240,9 +255,18 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 	if err != nil {
 		return err
 	}
+	topicExistsCache := make(map[string]bool)
 	for _, item := range items {
 		member, ok := item.Member.(string)
 		if !ok || member == "" || member == topicPlaceholderMember {
+			continue
+		}
+		nestedTopicMember, err := h.isNestedTopicMember(ctx, rdb, topicName, member, topicExistsCache)
+		if err != nil {
+			return err
+		}
+		if nestedTopicMember {
+			staleMembers = append(staleMembers, member)
 			continue
 		}
 		storedValue, exists := storedValues[storage.LinksPrefix+topicName+"/"+member]
@@ -290,6 +314,62 @@ func (h *Handler) refreshTopicIndex(ctx context.Context, rdb redisStore, topicNa
 	return h.syncTopicIndex(ctx, rdb, topicName)
 }
 
+func (h *Handler) syncParentTopicIndexForChildTopic(ctx context.Context, rdb redisStore, topicName string) error {
+	parentTopic, childMember, ok := directParentTopic(topicName)
+	if !ok {
+		return nil
+	}
+	parentExists, err := h.topicExists(ctx, rdb, parentTopic)
+	if err != nil {
+		return err
+	}
+	if !parentExists {
+		return nil
+	}
+	if err := ensureTopicItemsKey(ctx, rdb, parentTopic); err != nil {
+		return err
+	}
+	if err := rdb.ZAdd(ctx, topicItemsKey(parentTopic), redis.Z{
+		Score:  float64(time.Now().Unix()),
+		Member: childMember,
+	}).Err(); err != nil {
+		return err
+	}
+	return h.syncTopicIndex(ctx, rdb, parentTopic)
+}
+
+func (h *Handler) removeChildTopicFromParentIndex(ctx context.Context, rdb redisStore, topicName string) error {
+	parentTopic, childMember, ok := directParentTopic(topicName)
+	if !ok {
+		return nil
+	}
+	parentExists, err := h.topicExists(ctx, rdb, parentTopic)
+	if err != nil {
+		return err
+	}
+	if !parentExists {
+		return nil
+	}
+	membersToRemove := []any{childMember}
+	items, err := rdb.ZRevRangeWithScores(ctx, topicItemsKey(parentTopic), 0, -1).Result()
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		member, ok := item.Member.(string)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(member, childMember+"/") {
+			membersToRemove = append(membersToRemove, member)
+		}
+	}
+	if err := rdb.ZRem(ctx, topicItemsKey(parentTopic), membersToRemove...).Err(); err != nil {
+		return err
+	}
+	return h.syncTopicIndex(ctx, rdb, parentTopic)
+}
+
 func ensureTopicItemsKey(ctx context.Context, rdb redisStore, topicName string) error {
 	return rdb.ZAdd(ctx, topicItemsKey(topicName), redis.Z{
 		Score:  0,
@@ -309,32 +389,100 @@ func countTopicItems(ctx context.Context, rdb redisStore, topicName string) (int
 }
 
 func (h *Handler) adoptTopicItems(ctx context.Context, rdb redisStore, topicName string) error {
-	var cursor uint64
+	childValues, err := h.scanTopicChildValues(ctx, rdb, topicName)
+	if err != nil {
+		return err
+	}
+	descendantTopics := descendantTopicMembers(childValues)
 	now := float64(time.Now().Unix())
-	pattern := storage.LinksPrefix + topicName + "/*"
-	for {
-		keys, nextCursor, err := rdb.Scan(ctx, cursor, pattern, 100).Result()
-		if err != nil {
-			return err
+	for relativePath, storedValue := range childValues {
+		if relativePath == "" {
+			continue
 		}
-		for _, key := range keys {
-			fullPath := strings.TrimPrefix(key, storage.LinksPrefix)
-			relativePath := strings.TrimPrefix(fullPath, topicName+"/")
-			if relativePath == "" {
+		if storedValue.Type == topicType {
+			if strings.Contains(relativePath, "/") {
 				continue
 			}
-			if err := rdb.ZAdd(ctx, topicItemsKey(topicName), redis.Z{
-				Score:  now,
-				Member: relativePath,
-			}).Err(); err != nil {
-				return err
-			}
+		} else if memberBelongsToDescendantTopic(relativePath, descendantTopics) {
+			continue
 		}
-		cursor = nextCursor
-		if cursor == 0 {
-			return nil
+		if err := rdb.ZAdd(ctx, topicItemsKey(topicName), redis.Z{
+			Score:  now,
+			Member: relativePath,
+		}).Err(); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+func (h *Handler) scanTopicChildValues(ctx context.Context, rdb redisStore, topicName string) (map[string]storage.StoredValue, error) {
+	pattern := storage.LinksPrefix + topicName + "/*"
+	keys, err := scanAllKeys(ctx, rdb, pattern)
+	if err != nil {
+		return nil, err
+	}
+	storedValues, err := batchGetStoredValues(ctx, rdb, keys)
+	if err != nil {
+		return nil, err
+	}
+	childValues := make(map[string]storage.StoredValue, len(storedValues))
+	for _, key := range keys {
+		storedValue, exists := storedValues[key]
+		if !exists {
+			continue
+		}
+		fullPath := strings.TrimPrefix(key, storage.LinksPrefix)
+		relativePath := strings.TrimPrefix(fullPath, topicName+"/")
+		if relativePath == "" {
+			continue
+		}
+		childValues[relativePath] = storedValue
+	}
+	return childValues, nil
+}
+
+func descendantTopicMembers(childValues map[string]storage.StoredValue) map[string]struct{} {
+	topics := make(map[string]struct{})
+	for relativePath, storedValue := range childValues {
+		if relativePath == "" || storedValue.Type != topicType {
+			continue
+		}
+		topics[relativePath] = struct{}{}
+	}
+	return topics
+}
+
+func memberBelongsToDescendantTopic(member string, descendantTopics map[string]struct{}) bool {
+	for topicMember := range descendantTopics {
+		if member == topicMember || strings.HasPrefix(member, topicMember+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) isNestedTopicMember(ctx context.Context, rdb redisStore, topicName, member string, topicExistsCache map[string]bool) (bool, error) {
+	if !strings.Contains(member, "/") {
+		return false, nil
+	}
+	parts := strings.Split(member, "/")
+	for prefixLength := 1; prefixLength <= len(parts); prefixLength++ {
+		candidateTopic := topicName + "/" + strings.Join(parts[:prefixLength], "/")
+		exists, ok := topicExistsCache[candidateTopic]
+		if !ok {
+			var err error
+			exists, err = h.topicExists(ctx, rdb, candidateTopic)
+			if err != nil {
+				return false, err
+			}
+			topicExistsCache[candidateTopic] = exists
+		}
+		if exists {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func topicCountString(count int64) string {
