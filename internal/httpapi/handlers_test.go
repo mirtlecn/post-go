@@ -724,7 +724,7 @@ func TestHandleJSONCreateRejectsTTLForTopic(t *testing.T) {
 	}
 }
 
-func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
+func TestHandleJSONCreateStoresTopicItemAndRebuildsIndexWithoutAdoptingOrphans(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
 			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
@@ -752,8 +752,11 @@ func TestHandleJSONCreateStoresTopicItemAndRebuildsIndex(t *testing.T) {
 		t.Fatalf("expected topic home rebuild, got %+v", store.setKeys)
 	}
 	members := zaddMemberNames(store.zaddMembers)
-	if !slicesContain(members, "legacy") {
-		t.Fatalf("expected topic item sync to adopt orphans, got %+v", members)
+	if !slicesContain(members, "castle") {
+		t.Fatalf("expected topic item to be indexed, got %+v", members)
+	}
+	if slicesContain(members, "legacy") {
+		t.Fatalf("expected normal topic item write not to adopt orphans, got %+v", members)
 	}
 }
 
@@ -1387,7 +1390,7 @@ func TestHandleDeleteReturnsInternalErrorWhenRedisDeleteFails(t *testing.T) {
 	}
 }
 
-func TestHandleDeleteTopicItemUpdatesTopicIndexBeforeResponding(t *testing.T) {
+func TestHandleDeleteTopicItemUpdatesTopicIndexBeforeRespondingWithoutAdoptingOrphans(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
 			"surl:anime":        {value: `{"type":"topic","content":"<html></html>","title":"Anime"}`},
@@ -1418,8 +1421,8 @@ func TestHandleDeleteTopicItemUpdatesTopicIndexBeforeResponding(t *testing.T) {
 		t.Fatalf("expected deleted item to be removed from store")
 	}
 	members := zaddMemberNames(store.zaddMembers)
-	if !slicesContain(members, "orphan") {
-		t.Fatalf("expected delete sync to adopt orphan entries, got %+v", members)
+	if slicesContain(members, "orphan") {
+		t.Fatalf("expected delete sync not to adopt orphan entries, got %+v", members)
 	}
 }
 
@@ -1770,7 +1773,7 @@ func TestHandleFileUploadRollsBackWhenTopicSyncFails(t *testing.T) {
 	}
 }
 
-func TestHandleFileUploadTopicSyncAdoptsExistingChildren(t *testing.T) {
+func TestHandleFileUploadTopicSyncDoesNotAdoptExistingChildren(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
 			"surl:anime": {value: `{"type":"topic","content":"<html></html>","title":"anime"}`},
@@ -1789,8 +1792,11 @@ func TestHandleFileUploadTopicSyncAdoptsExistingChildren(t *testing.T) {
 		t.Fatalf("expected status 201, got %d", response.Code)
 	}
 	members := zaddMemberNames(store.zaddMembers)
-	if !slicesContain(members, "orphan") {
-		t.Fatalf("expected file upload sync to adopt existing children, got %+v", members)
+	if !slicesContain(members, "note.txt") {
+		t.Fatalf("expected uploaded topic item to be indexed, got %+v", members)
+	}
+	if slicesContain(members, "orphan") {
+		t.Fatalf("expected file upload sync not to adopt existing children, got %+v", members)
 	}
 }
 

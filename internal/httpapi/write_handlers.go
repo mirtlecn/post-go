@@ -336,7 +336,7 @@ func (h *Handler) handleTopicCreate(w http.ResponseWriter, r *http.Request, rdb 
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}
-	if err := h.syncTopicIndex(ctx, rdb, topicName); err != nil {
+	if err := h.refreshTopicIndex(ctx, rdb, topicName); err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
 		return
 	}

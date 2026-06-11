@@ -302,18 +302,16 @@ When you create or update a topic member:
 
 1. write the normal object to `surl:<topic>/<member>`
 2. `ZADD topic:<topic>:items <member>`
-3. scan existing keys matching `surl:<topic>/*` and adopt them into `topic:<topic>:items`
-4. ensure placeholder member exists
-5. rebuild topic index Markdown
-6. write rebuilt Markdown back to `surl:<topic>`
+3. ensure placeholder member exists
+4. rebuild topic index Markdown
+5. write rebuilt Markdown back to `surl:<topic>`
 
 When you delete a topic member:
 
 1. delete `surl:<topic>/<member>`
 2. `ZREM topic:<topic>:items <member>`
-3. scan existing keys matching `surl:<topic>/*` and adopt them into `topic:<topic>:items`
-4. ensure placeholder member exists
-5. rebuild topic index Markdown
+3. ensure placeholder member exists
+4. rebuild topic index Markdown
 
 When you create a topic home:
 
@@ -326,6 +324,10 @@ When you create a topic home:
 This means a topic can "adopt" old paths that already existed before the topic home was created.
 
 When you refresh a topic home with `POST /update` and `type=topic`, the server also re-scans `surl:<topic>/*`, adopts matching paths into `topic:<topic>:items`, ensures the placeholder member exists, and rebuilds the topic index Markdown.
+
+Normal topic member writes and deletes do not run the adoption scan. They only update the known zset member for that write and rebuild the index. Use topic creation or a manual `type=topic` refresh when old existing paths need to be adopted.
+
+Every topic rebuild still removes stale zset members when the corresponding `surl:<topic>/<member>` key no longer exists.
 
 ### 3.6 Topic delete semantics
 

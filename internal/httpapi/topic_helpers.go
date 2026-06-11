@@ -277,13 +277,17 @@ func (h *Handler) rebuildTopicIndex(ctx context.Context, rdb redisStore, topicNa
 }
 
 func (h *Handler) syncTopicIndex(ctx context.Context, rdb redisStore, topicName string) error {
-	if err := h.adoptTopicItems(ctx, rdb, topicName); err != nil {
-		return err
-	}
 	if err := ensureTopicItemsKey(ctx, rdb, topicName); err != nil {
 		return err
 	}
 	return h.rebuildTopicIndex(ctx, rdb, topicName)
+}
+
+func (h *Handler) refreshTopicIndex(ctx context.Context, rdb redisStore, topicName string) error {
+	if err := h.adoptTopicItems(ctx, rdb, topicName); err != nil {
+		return err
+	}
+	return h.syncTopicIndex(ctx, rdb, topicName)
 }
 
 func ensureTopicItemsKey(ctx context.Context, rdb redisStore, topicName string) error {
