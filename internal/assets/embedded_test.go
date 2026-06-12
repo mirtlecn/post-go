@@ -25,12 +25,12 @@ func TestGFMItAssetsRegisteredAsInternalRoutes(t *testing.T) {
 			t.Fatalf("%s content type = %q, want %q", routePath, contentType, gfmAsset.ContentType)
 		}
 
-		expectedBody, _, err := gfmit.ReadAsset(gfmAsset.Key)
+		expectedBody, err := gfmit.ReadEmbeddedAssetContent(gfmAsset.Key)
 		if err != nil {
-			t.Fatalf("ReadAsset(%q) error = %v", gfmAsset.Key, err)
+			t.Fatalf("ReadEmbeddedAssetContent(%q) error = %v", gfmAsset.Key, err)
 		}
 		if !bytes.Equal(body, expectedBody) {
-			t.Fatalf("%s body differs from gfm-it content", routePath)
+			t.Fatalf("%s body differs from gfm-it embedded content", routePath)
 		}
 	}
 }

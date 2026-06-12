@@ -50,9 +50,9 @@ func loadMD2HTMLAssets() (map[string]md2HTMLAsset, map[string]md2HTMLAsset, erro
 		if gfmAsset.Key == "" || gfmAsset.File == "" || gfmAsset.ContentType == "" {
 			return nil, nil, fmt.Errorf("gfm-it asset manifest entry is incomplete: %+v", gfmAsset)
 		}
-		content, _, err := gfmit.ReadAsset(gfmAsset.Key)
+		content, err := gfmit.ReadEmbeddedAssetContent(gfmAsset.Key)
 		if err != nil {
-			return nil, nil, fmt.Errorf("read gfm-it asset %s: %w", gfmAsset.Key, err)
+			return nil, nil, fmt.Errorf("read gfm-it embedded asset %s: %w", gfmAsset.Key, err)
 		}
 
 		asset := md2HTMLAsset{
