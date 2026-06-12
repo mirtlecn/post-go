@@ -2686,7 +2686,7 @@ func TestServeHTTPRawFileReturnsObjectKeyWithoutS3(t *testing.T) {
 	}
 }
 
-func TestServeHTTPRawTopicStillRendersTopicHome(t *testing.T) {
+func TestServeHTTPRawTopicReturnsStoredMarkdown(t *testing.T) {
 	topicMarkdown := topic.BuildIndexMarkdown("anime", "Anime Archive", []topic.Item{
 		{
 			Path:      "castle-notes",
@@ -2713,14 +2713,17 @@ func TestServeHTTPRawTopicStillRendersTopicHome(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.Code)
 	}
-	if response.Header().Get("Cache-Control") != topicCacheControl {
-		t.Fatalf("expected topic cache header %q, got %q", topicCacheControl, response.Header().Get("Cache-Control"))
+	if response.Header().Get("Cache-Control") != publicCacheControl {
+		t.Fatalf("expected default cache header %q, got %q", publicCacheControl, response.Header().Get("Cache-Control"))
 	}
-	if response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
-		t.Fatalf("expected topic html content type, got %q", response.Header().Get("Content-Type"))
+	if response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatalf("expected raw topic content type, got %q", response.Header().Get("Content-Type"))
 	}
-	if !strings.Contains(response.Body.String(), "<title>Anime Archive</title>") {
-		t.Fatalf("expected rendered topic home, got %q", response.Body.String())
+	if response.Body.String() != topicMarkdown {
+		t.Fatalf("expected stored topic markdown, got %q", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "<title>Anime Archive</title>") {
+		t.Fatalf("expected raw topic markdown instead of rendered html, got %q", response.Body.String())
 	}
 }
 

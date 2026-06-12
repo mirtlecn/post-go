@@ -249,7 +249,7 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		return
 	}
 	storedValue := storage.ParseStoredValue(stored)
-	if isRawPublicRead(r) && storedValue.Type != topicType {
+	if isRawPublicRead(r) {
 		writeRawContent(w, r, storedValue.Content)
 		return
 	}

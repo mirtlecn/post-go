@@ -21,4 +21,4 @@ smoke: build
 	./scripts/smoke_all.sh
 
 assets-sync assets-sync-optional:
-	@echo "embedded assets are provided by github.com/mirtlecn/gfm-addons"
+	@echo "embedded assets are provided by github.com/mirtlecn/gfm-it"

@@ -67,8 +67,9 @@ func TestConvertMarkdownToHTMLAddsRawReadHints(t *testing.T) {
 	if viewportIndex == -1 || alternateIndex == -1 || titleIndex == -1 {
 		t.Fatalf("expected viewport, raw alternate link, and title in output, got %q", output)
 	}
-	if !(viewportIndex < alternateIndex && alternateIndex < titleIndex) {
-		t.Fatalf("expected raw alternate link between viewport and title, got %q", output)
+	headEndIndex := strings.Index(output, "</head>")
+	if !(viewportIndex < alternateIndex && alternateIndex < headEndIndex) {
+		t.Fatalf("expected raw alternate link in document head, got %q", output)
 	}
 
 	bodyIndex := strings.Index(output, "<body>")
@@ -274,7 +275,9 @@ func TestConvertMarkdownToHTMLInjectsConfiguredFooterHTML(t *testing.T) {
 	if !strings.Contains(output, "margin-top: auto;") {
 		t.Fatalf("expected footer layout css, got %q", output)
 	}
-	if !strings.Contains(output, "min-height: 100vh; display: flex; flex-direction: column;") {
+	if !strings.Contains(output, "min-height: 100vh;") ||
+		!strings.Contains(output, "display: flex;") ||
+		!strings.Contains(output, "flex-direction: column;") {
 		t.Fatalf("expected body flex layout css, got %q", output)
 	}
 }

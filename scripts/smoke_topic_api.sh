@@ -76,11 +76,15 @@ assert_contains "$TOPIC_HOME_HEADERS" "Cache-Control: public, max-age=600, s-max
 pass "topic home cache"
 
 TOPIC_HOME_RAW="$(curl -sS "$POST_BASE_URL/$TOPIC?raw")"
-assert_contains "$TOPIC_HOME_RAW" "<title>Anime Archive</title>" "topic home raw still renders"
+assert_contains "$TOPIC_HOME_RAW" "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>" "topic home raw stored markdown"
+assert_contains "$TOPIC_HOME_RAW" "<span style=\"color: #666;\">Home</span>" "topic home raw stored markdown home label"
+if [[ "$TOPIC_HOME_RAW" == *"<title>Anime Archive</title>"* ]]; then
+  fail "topic home raw stored markdown" "expected raw topic markdown, got rendered HTML"
+fi
 TOPIC_HOME_RAW_HEADERS="$(curl -sSI "$POST_BASE_URL/$TOPIC?raw")"
-assert_contains "$TOPIC_HOME_RAW_HEADERS" "Content-Type: text/html; charset=utf-8" "topic home raw keeps html content type"
-assert_contains "$TOPIC_HOME_RAW_HEADERS" "Cache-Control: public, max-age=600, s-maxage=600" "topic home raw keeps cache"
-pass "topic home raw still renders"
+assert_contains "$TOPIC_HOME_RAW_HEADERS" "Content-Type: text/plain; charset=utf-8" "topic home raw content type"
+assert_contains "$TOPIC_HOME_RAW_HEADERS" "Cache-Control: public, max-age=86400, s-maxage=86400" "topic home raw cache"
+pass "topic home raw stored markdown"
 
 api_json POST "$POST_BASE_URL/create" '{"path":"'"$TOPIC"'","type":"topic","ttl":10}'
 assert_status 400 "reject topic ttl"

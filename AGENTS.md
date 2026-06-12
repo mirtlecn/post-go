@@ -34,8 +34,8 @@ This file captures repository-specific rules that are easy for agents to miss.
 
 ## Embedded Assets
 
-- Embedded frontend assets are provided by `github.com/mirtlecn/gfm-addons`.
-- `make assets-sync` is a compatibility no-op; update `gfm-addons` and bump the Go dependency when asset content changes.
+- Embedded frontend assets are provided by `github.com/mirtlecn/gfm-it`.
+- `make assets-sync` is a compatibility no-op; update `gfm-it` and bump the Go dependency when asset content changes.
 - CI and release workflows do not regenerate embedded assets in this repository.
 
 ## CI And Release

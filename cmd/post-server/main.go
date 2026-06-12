@@ -22,7 +22,7 @@ func main() {
 	}
 	if err := assets.InitError(); err != nil {
 		fmt.Println("Error: Embedded assets are unavailable.")
-		fmt.Println("Check dependency: github.com/mirtlecn/gfm-addons")
+		fmt.Println("Check dependency: github.com/mirtlecn/gfm-it")
 		fmt.Printf("Details: %v\n", err)
 		os.Exit(1)
 	}

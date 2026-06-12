@@ -1,26 +1,17 @@
 package convert
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"html"
 	"os"
-	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
-	"post-go/internal/assets"
-
-	callouts "github.com/ZMT-Creative/gm-alert-callouts"
-	katex "github.com/libkush/goldmark-katex"
+	gfmit "github.com/mirtlecn/gfm-it"
 	"github.com/skip2/go-qrcode"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
-	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
 // MarkdownOptions customizes Markdown-to-HTML rendering.
@@ -37,25 +28,17 @@ func ConvertMarkdownToHTML(markdown string) (string, error) {
 
 // ConvertMarkdownToHTMLWithOptions converts Markdown (GFM) to HTML with optional page metadata.
 func ConvertMarkdownToHTMLWithOptions(markdown string, options MarkdownOptions) (string, error) {
-	md := goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			extension.Footnote,
-			// GitHub Alerts (NOTE/TIP/IMPORTANT/WARNING/CAUTION)
-			callouts.AlertCallouts,
-			// Math (KaTeX) follows the original master branch behavior.
-			&katex.Extender{},
-		),
-		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
-		goldmark.WithRendererOptions(gmhtml.WithUnsafe()),
-	)
-
-	var buf bytes.Buffer
-	input := buildMarkdownInput(stripFrontMatter(markdown), options)
-	if err := md.Convert([]byte(input), &buf); err != nil {
-		return "", err
-	}
-	return wrapHTML(buf.String(), alertCSS(), options.PageTitle), nil
+	input := buildMarkdownInput(markdown, options)
+	return gfmit.RenderMarkdownToHTML(input, gfmit.RenderOptions{
+		Title:        options.PageTitle,
+		AssetMode:    "local",
+		AssetBaseURL: "/asset/",
+		FooterHTML:   getConfiguredFooterHTML(),
+		Slots: gfmit.RenderSlots{
+			HeadEnd:   `<link rel="alternate" type="text/plain" href="?raw">`,
+			BodyStart: `<!-- hint: append ?raw to view the raw file -->`,
+		},
+	})
 }
 
 // ConvertToQRCode converts text to a small terminal-friendly QR code string.
@@ -132,14 +115,13 @@ func stripFrontMatter(input string) string {
 }
 
 func consumeFrontMatterLine(input string, start int) (int, bool) {
-	switch idx := bytes.IndexAny([]byte(input[start:]), "\r\n"); {
-	case idx >= 0:
-		return start + idx, true
-	case start < len(input):
-		return len(input), true
-	default:
+	if start >= len(input) {
 		return 0, false
 	}
+	if idx := strings.IndexAny(input[start:], "\r\n"); idx >= 0 {
+		return start + idx, true
+	}
+	return len(input), true
 }
 
 func skipFrontMatterLineBreak(input string, index int) int {
@@ -159,6 +141,7 @@ func buildMarkdownInput(markdown string, options MarkdownOptions) string {
 	if options.TopicBackLink == "" {
 		return markdown
 	}
+	markdown = stripFrontMatter(markdown)
 	backLabel := options.TopicBackLabel
 	if backLabel == "" {
 		backLabel = "Topic"
@@ -178,17 +161,6 @@ func buildMarkdownInput(markdown string, options MarkdownOptions) string {
 	builder.WriteString("\n\n\n\n\n\n")
 	builder.WriteString(markdown)
 	return builder.String()
-}
-
-func escapeMarkdownLinkText(text string) string {
-	replacer := strings.NewReplacer(
-		"\\", "\\\\",
-		"<", "\\<",
-		">", "\\>",
-		"[", "\\[",
-		"]", "\\]",
-	)
-	return replacer.Replace(text)
 }
 
 func formatMarkdownLinkDestination(destination string) string {
@@ -233,98 +205,4 @@ func CapitalizeTopicLabel(label string) string {
 		return ""
 	}
 	return string(unicode.ToUpper(firstRune)) + label[size:]
-}
-
-func wrapHTML(body, alertsStyle, pageTitle string) string {
-	darkBg := "#0d1117"
-	katexCSS := "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
-	footerHTML := getConfiguredFooterHTML()
-
-	// 动态标签容器
-	var extraHead strings.Builder
-	var extraBody strings.Builder
-
-	// 1. 检查 TOC：统计 h1~h6 标签数量
-	reHeaders := regexp.MustCompile(`(?i)<h[1-6]`)
-	headerMatches := reHeaders.FindAllString(body, -1)
-	if len(headerMatches) >= 2 {
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("gfm_addons_css") + "\">\n")
-		extraBody.WriteString("<script src=\"" + assets.MustAssetURL("gfm_addons_js") + "\"></script>\n")
-	}
-
-	// 2. 检查代码高亮
-	if strings.Contains(body, "<code class=\"language-") {
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("highlight_light_css") + "\" media=\"(prefers-color-scheme: light)\">\n")
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("highlight_dark_css") + "\" media=\"(prefers-color-scheme: dark)\">\n")
-		extraBody.WriteString("<script src=\"" + assets.MustAssetURL("highlight_js") + "\" defer></script>\n")
-		extraBody.WriteString("<script>window.addEventListener('DOMContentLoaded', function(){ if (window.hljs && hljs.highlightAll) hljs.highlightAll(); });</script>\n")
-	}
-
-	// 3. Keep KaTeX CSS as an explicit external exception.
-	if strings.Contains(body, "<span class=\"katex-display\">") {
-		extraHead.WriteString("<link rel=\"stylesheet\" href=\"" + katexCSS + "\">\n")
-	}
-
-	bodyLayoutCSS := "  body { box-sizing: border-box; min-width: 200px; max-width: 838px; margin: 0 auto; padding: 45px;"
-	footerCSS := ""
-	footerMarkup := ""
-	if footerHTML != "" {
-		bodyLayoutCSS += " min-height: 100vh; display: flex; flex-direction: column;"
-		footerCSS = "  .post-footer { flex-shrink: 0; margin-top: auto; padding-top: 48px; text-align: center; font-size: 12px; }\n"
-		footerMarkup = "<footer class=\"markdown-body post-footer\">\n" + footerHTML + "\n</footer>\n"
-	}
-	bodyLayoutCSS += " }\n"
-
-	return "<!doctype html>\n" +
-		"<html>\n" +
-		"<head>\n" +
-		"<meta charset=\"utf-8\">\n" +
-		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimal-ui\">\n" +
-		"<link rel=\"alternate\" type=\"text/plain\" href=\"?raw\">\n" +
-		"<title>" + html.EscapeString(pageTitle) + "</title>\n" +
-		"<link rel=\"stylesheet\" href=\"" + assets.MustAssetURL("ravel_gfm_css") + "\">\n" +
-		extraHead.String() +
-		"<style>\n" +
-		bodyLayoutCSS +
-		"  .markdown-body .markdown-alert { padding: 0.5rem 1rem; }\n" +
-		alertsStyle + "\n" +
-		"  @media (prefers-color-scheme: dark) { body { background-color: " + darkBg + "; } }\n" +
-		"  @media (max-width: 767px) { body { max-width: 100%; padding: 25px; } }\n" +
-		footerCSS +
-		"</style>\n" +
-		"</head>\n" +
-		"<body>\n" +
-		"<!-- hint: append ?raw to view the raw file -->\n" +
-		"<article class=\"markdown-body\">\n" +
-		body +
-		"\n</article>\n" +
-		extraBody.String() +
-		footerMarkup +
-		"</body>\n" +
-		"</html>"
-}
-
-func alertCSS() string {
-	// Minimal styling that keeps parity with GitHub-like alerts.
-	// These classes are emitted by the goldmark callouts extension.
-	css := []string{
-		".markdown-body .callout { border-left: 4px solid #9e9e9e; padding: 0.75rem 1rem; margin: 1rem 0; background: #f6f8fa; border-radius: 6px; }",
-		".markdown-body .callout-title { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }",
-		".markdown-body .callout-title-text { margin: 0; }",
-		".markdown-body .callout-body > :first-child { margin-top: 0.5rem; }",
-		".markdown-body .callout-note { border-color: #2f81f7; }",
-		".markdown-body .callout-tip { border-color: #3fb950; }",
-		".markdown-body .callout-important { border-color: #a371f7; }",
-		".markdown-body .callout-warning { border-color: #d29922; }",
-		".markdown-body .callout-caution { border-color: #f85149; }",
-		"@media (prefers-color-scheme: dark) {",
-		"  .markdown-body .callout { background: #161b22; color: inherit; }",
-		"  .markdown-body .callout-note { border-color: #58a6ff; }",
-		"  .markdown-body .callout-tip { border-color: #3fb950; }",
-		"  .markdown-body .callout-important { border-color: #a371f7; }",
-		"  .markdown-body .callout-warning { border-color: #d29922; }",
-		"  .markdown-body .callout-caution { border-color: #f85149; }",
-		"}",
-	}
-	return strings.Join(css, "\n")
 }

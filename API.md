@@ -88,9 +88,9 @@ make build
 ./post-server
 ```
 
-Embedded assets are provided by `github.com/mirtlecn/gfm-addons`.
+Embedded assets are provided by `github.com/mirtlecn/gfm-it`.
 
-`make assets-sync` is kept as a compatibility no-op for older local workflows. When asset content changes, publish a new `gfm-addons` version and bump the Go dependency in this repository.
+`make assets-sync` is kept as a compatibility no-op for older local workflows. When asset content changes, publish a new `gfm-it` version and bump the Go dependency in this repository.
 
 If you only need text, short links, Markdown, HTML, QR code, and topic features, Redis is enough.
 
@@ -103,7 +103,7 @@ The `Makefile` defines this workflow:
 - `make build`: delete old binary, then build `./cmd/post-server`
 - `make test`: run `make build`, then `go test ./...`
 - `make smoke`: run `make build`, then `./scripts/smoke_all.sh`
-- `make assets-sync`: compatibility no-op; assets come from `gfm-addons`
+- `make assets-sync`: compatibility no-op; assets come from `gfm-it`
 
 `scripts/smoke_all.sh` is the real regression entrypoint. It does:
 
@@ -152,7 +152,7 @@ That enables request-level logs from `internal/httpapi/logging.go`, including:
 Useful startup observations:
 
 - `Loaded env from: .env.local` means config file was loaded
-- embedded asset dependency errors mean `github.com/mirtlecn/gfm-addons` is missing or invalid
+- embedded asset dependency errors mean `github.com/mirtlecn/gfm-it` is missing or invalid
 - missing env error means `LINKS_REDIS_URL` or `SECRET_KEY` is not set
 - `env: PORT=... LINKS_REDIS_URL=...` means server is about to listen
 
@@ -688,7 +688,7 @@ That makes Post-go closer to a content server than a classic frontend-backend sp
 
 ### 5.2 Embedded asset model
 
-Embedded assets are declared and embedded by `github.com/mirtlecn/gfm-addons`. `internal/assets/embedded.go` adapts that package into Post-go's internal route lookup model.
+Embedded assets are declared and embedded by `github.com/mirtlecn/gfm-it`. `internal/assets/embedded.go` adapts that package into Post-go's internal route lookup model.
 
 Current asset categories include:
 
@@ -696,7 +696,7 @@ Current asset categories include:
 - highlight.js CSS and JS
 - GitHub-flavored Markdown addon CSS and JS
 
-They are not maintained in this repository. Update `gfm-addons`, publish a new version, then bump this repository's Go dependency.
+They are not maintained in this repository. Update `gfm-it`, publish a new version, then bump this repository's Go dependency.
 
 ### 5.3 Reserved asset routes
 
@@ -719,7 +719,7 @@ Two consequences:
 
 ### 5.4 Markdown rendering model
 
-Markdown conversion is implemented in `internal/convert/convert.go` using Goldmark.
+Markdown conversion is implemented in `github.com/mirtlecn/gfm-it`. `internal/convert/convert.go` builds Post-specific Markdown chrome, footer, raw-read hints, and local asset options before calling that renderer.
 
 Enabled features include:
 
@@ -783,7 +783,7 @@ Public display behavior:
 - `file`: raw file response
 - `text`: plain text
 
-Add `?raw` to public `GET` or `HEAD` reads to return the stored `content` text directly. Topic pages ignore `?raw` and keep rendering the topic index HTML.
+Add `?raw` to public `GET` or `HEAD` reads to return the stored `content` text directly. For topic pages this is the stored generated Markdown index, not rendered topic HTML.
 
 So "frontend behavior" is actually distributed across content types instead of being one central browser app.
 
