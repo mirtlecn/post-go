@@ -17,6 +17,7 @@ import (
 // MarkdownOptions customizes Markdown-to-HTML rendering.
 type MarkdownOptions struct {
 	PageTitle      string
+	Canonical      string
 	TopicBackLink  string
 	TopicBackLabel string
 }
@@ -30,10 +31,12 @@ func ConvertMarkdownToHTML(markdown string) (string, error) {
 func ConvertMarkdownToHTMLWithOptions(markdown string, options MarkdownOptions) (string, error) {
 	input := buildMarkdownInput(markdown, options)
 	return gfmit.RenderMarkdownToHTML(input, gfmit.RenderOptions{
-		Title:        options.PageTitle,
-		AssetMode:    "local",
-		AssetBaseURL: "/asset/",
-		FooterHTML:   getConfiguredFooterHTML(),
+		Title:         options.PageTitle,
+		Canonical:     options.Canonical,
+		FallbackImage: true,
+		AssetMode:     "local",
+		AssetBaseURL:  "/asset/",
+		FooterHTML:    getConfiguredFooterHTML(),
 		Slots: gfmit.RenderSlots{
 			HeadEnd:   `<link rel="alternate" type="text/plain" href="?raw">`,
 			BodyStart: `<!-- hint: append ?raw to view the raw file -->`,

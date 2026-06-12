@@ -68,6 +68,7 @@ pass "topic lookup"
 
 TOPIC_HOME="$(curl -sS "$POST_BASE_URL/$TOPIC")"
 assert_contains "$TOPIC_HOME" "<title>Anime Archive</title>" "topic home title"
+assert_contains "$TOPIC_HOME" "<link rel=\"canonical\" href=\"$POST_BASE_URL/$TOPIC\">" "topic home canonical"
 assert_contains "$TOPIC_HOME" "<div style=\"font-size: 1.3em; font-weight: bold\">Anime Archive</div>" "topic home heading"
 pass "topic home render"
 

@@ -2490,6 +2490,61 @@ func TestServeHTTPRendersStoredMarkdown(t *testing.T) {
 	}
 }
 
+func TestServeHTTPRendersStoredMarkdownCanonicalFromForwardedHeaders(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"md","content":"# Hello","title":"Greeting"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	request := httptest.NewRequest(http.MethodGet, "/note", nil)
+	request.Host = "internal.example"
+	request.Header.Set("x-forwarded-host", "public.example")
+	request.Header.Set("x-forwarded-proto", "https")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `<link rel="canonical" href="https://public.example/note">`) {
+		t.Fatalf("expected forwarded canonical URL, got %q", body)
+	}
+	if !strings.Contains(body, `<meta property="og:url" content="https://public.example/note">`) {
+		t.Fatalf("expected forwarded og:url, got %q", body)
+	}
+}
+
+func TestServeHTTPRendersStoredMarkdownCanonicalFromBaseDomain(t *testing.T) {
+	store := &fakeRedisStore{
+		getResults: map[string]fakeStringResult{
+			"surl:note": {value: `{"type":"md","content":"# Hello","title":"Greeting"}`},
+		},
+	}
+	handler := newTestHandler(store)
+	handler.Cfg.BaseDomain = "https://www.example.com/base"
+	request := httptest.NewRequest(http.MethodGet, "/note", nil)
+	request.Host = "internal.example"
+	request.Header.Set("x-forwarded-host", "public.example")
+	request.Header.Set("x-forwarded-proto", "https")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `<link rel="canonical" href="https://www.example.com/note">`) {
+		t.Fatalf("expected base-domain canonical URL, got %q", body)
+	}
+	if !strings.Contains(body, `<meta property="og:url" content="https://www.example.com/note">`) {
+		t.Fatalf("expected base-domain og:url, got %q", body)
+	}
+}
+
 func TestServeHTTPRendersStoredTopicMarkdownWithBacklink(t *testing.T) {
 	store := &fakeRedisStore{
 		getResults: map[string]fakeStringResult{
@@ -2948,6 +3003,9 @@ func TestServeHTTPReturnsTopicHomeWithTopicCacheHeader(t *testing.T) {
 	}
 	if !strings.Contains(body, `<footer class="markdown-body post-footer">`) || !strings.Contains(body, "topic-footer-6f91") {
 		t.Fatalf("expected topic footer to render at read time, got %q", body)
+	}
+	if !strings.Contains(body, `<link rel="canonical" href="http://example.com/anime">`) {
+		t.Fatalf("expected topic canonical URL, got %q", body)
 	}
 }
 

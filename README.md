@@ -1,48 +1,8 @@
-[Vercel / Node.js / Web GUI](https://github.com/mirtlecn/post) | [CLI client](https://github.com/mirtlecn/post-cli) | [Skills for AI Agents](https://github.com/mirtlecn/post-cli/tree/master/skills)
-
 # Post-go
 
-A lightweight service for sharing **text, links, and files**. Think of it as a self-hosted temporary clipboard plus short-link tool:
+一个 Post API 服务。
 
-- Post text and get a short URL
-- Post a URL and auto-redirect on access
-- Upload files and get downloadable links
-- Group multiple items under a Topic page
-
----
-
-## Who is this for?
-
-- Individuals or small teams who want a self-hosted sharing service
-- Users who prefer a minimal API over a complex admin system
-- Teams that want one model for text, links, and file sharing
-
----
-
-## What you get
-
-- **Unified path model**: every item is available at `/<path>`
-- **Public read + authenticated write**: anyone can open public links; writes require a token
-- **TTL support**: optional expiration in minutes
-- **Topic aggregation page**: automatically list content under a topic
-
----
-
-## Quick Start
-
-### 1) Requirements
-
-Required:
-
-- Redis
-- `SECRET_KEY` (write API authentication)
-- `LINKS_REDIS_URL`
-
-If you need file uploads, configure S3-compatible object storage as well.
-`MAX_CONTENT_SIZE_KB` defaults to `1024`; `MAX_FILE_SIZE_MB` defaults to `3.5`.
-When `S3_ENDPOINT` is set, S3 clients use path-style bucket lookup by default; set `S3_FORCE_PATH_STYLE=false` to disable it.
-
-### 2) Run locally
+## Run
 
 ```bash
 cp .env.example .env.local
@@ -50,64 +10,47 @@ make
 ./post-server
 ```
 
-By default, the service is available at `http://localhost:3000` (unless you set `PORT`).
+默认地址：
 
-Set `BASE_DOMAIN` if generated API links should use a fixed public domain instead of request headers:
-
-```bash
-BASE_DOMAIN=www.example.com
+```text
+http://localhost:3000
 ```
 
-Set `FOOTER` to a base64-encoded HTML string if rendered Markdown pages should include a shared footer:
-
-```bash
-FOOTER="$(printf '%s' '<a href="https://example.com">example.com</a>' | base64)"
-```
-
----
-
-## Common Usage
-
-Set environment variables first:
+## Examples
 
 ```bash
 export POST_BASE_URL="http://localhost:3000"
 export POST_TOKEN="your-secret-key"
 ```
 
-### Create a text item
+Create text:
 
 ```bash
 curl -X POST "$POST_BASE_URL/create" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "path": "hello",
-    "url": "Hello Post-go",
-    "type": "text"
-  }'
+  -d '{"path":"hello","url":"Hello Post-go","type":"text"}'
 ```
 
-Then open:
-
-- `http://localhost:3000/hello`
-
-### Create a short link
+Create link:
 
 ```bash
 curl -X POST "$POST_BASE_URL/create" \
   -H "Authorization: Bearer $POST_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "path": "openai",
-    "url": "https://openai.com",
-    "type": "url"
-  }'
+  -d '{"path":"openai","url":"https://openai.com","type":"url"}'
 ```
 
-Accessing `/openai` returns a `302` redirect to the target URL.
+Create Markdown:
 
-### Upload a file
+```bash
+curl -X POST "$POST_BASE_URL/create" \
+  -H "Authorization: Bearer $POST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"note","url":"# Hello","type":"md2html"}'
+```
+
+Upload file:
 
 ```bash
 curl -X POST "$POST_BASE_URL/create" \
@@ -116,34 +59,18 @@ curl -X POST "$POST_BASE_URL/create" \
   -F "file=@./manual.pdf"
 ```
 
----
+Read:
 
-## Authentication
-
-Write operations require:
-
-```http
-Authorization: Bearer <SECRET_KEY>
+```bash
+curl "$POST_BASE_URL/hello"
+curl "$POST_BASE_URL/note"
+curl "$POST_BASE_URL/note?raw"
 ```
 
-Operations that require authentication: `POST /create`, `POST /update`, `POST /delete`, and `POST /query`.
+## API
 
-Public content access uses `GET /<path>` and does not require authentication.
-
-Authenticated management `POST /query` and `POST /delete` also support a trailing `*` in `path` for prefix matching.
-
----
-
-## API documentation
-
-For full endpoint details (fields, error codes, complete examples), see:
-
-- [API.md](./API.md)
-
----
+See [API.md](./API.md).
 
 ## License
 
 MIT
-
-© Mirtle together with OpenAI Codex

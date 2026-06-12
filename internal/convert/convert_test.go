@@ -53,6 +53,44 @@ func TestConvertMarkdownToHTMLWithOptionsSetsPageTitle(t *testing.T) {
 	}
 }
 
+func TestConvertMarkdownToHTMLFallsBackToFirstHeadingTitle(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("# Hello")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, "<title>Hello</title>") {
+		t.Fatalf("expected first heading title fallback, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLEnablesFallbackSocialImageByDefault(t *testing.T) {
+	output, err := ConvertMarkdownToHTML("# Hello")
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, `<meta property="og:image" content="https://picsum.photos/seed/`) {
+		t.Fatalf("expected fallback og:image, got %q", output)
+	}
+	if !strings.Contains(output, `<meta name="twitter:image" content="https://picsum.photos/seed/`) {
+		t.Fatalf("expected fallback twitter:image, got %q", output)
+	}
+}
+
+func TestConvertMarkdownToHTMLPassesCanonicalThrough(t *testing.T) {
+	output, err := ConvertMarkdownToHTMLWithOptions("# Hello", MarkdownOptions{
+		Canonical: "https://example.test/note",
+	})
+	if err != nil {
+		t.Fatalf("expected conversion to succeed, got %v", err)
+	}
+	if !strings.Contains(output, `<link rel="canonical" href="https://example.test/note">`) {
+		t.Fatalf("expected canonical link, got %q", output)
+	}
+	if !strings.Contains(output, `<meta property="og:url" content="https://example.test/note">`) {
+		t.Fatalf("expected og:url, got %q", output)
+	}
+}
+
 func TestConvertMarkdownToHTMLAddsRawReadHints(t *testing.T) {
 	output, err := ConvertMarkdownToHTMLWithOptions("# Hello", MarkdownOptions{
 		PageTitle: "Anime Archive",

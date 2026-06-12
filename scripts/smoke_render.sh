@@ -78,6 +78,8 @@ func main() {
 	pass("markdown footer wrapper")
 	mustContain("markdown footer content", footerHTML, `footer-smoke-c4f42 <a href="https://example.test/footer">footer link</a>`)
 	pass("markdown footer content")
+	mustContain("fallback social image", footerHTML, `<meta property="og:image" content="https://picsum.photos/seed/`)
+	pass("fallback social image")
 
 	markdown := topic.BuildIndexMarkdown("anime", "Anime", []topic.Item{
 		{

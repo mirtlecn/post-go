@@ -261,6 +261,7 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		w.Header().Set("Cache-Control", topicCacheControl)
 		html, err := convert.ConvertMarkdownToHTMLWithOptions(storedValue.Content, convert.MarkdownOptions{
 			PageTitle: topicDisplayTitle(path, storedValue),
+			Canonical: buildPublicSURL(h.getDomain(r), path),
 		})
 		if err != nil {
 			requestLogger{}.Errorf("topic render failed: %s (%v)", path, err)
@@ -273,7 +274,7 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request, path stri
 		utils.HTML(w, http.StatusOK, storedValue.Content, true)
 		return
 	case "md":
-		html, err := h.renderStoredMarkdown(ctx, rdb, path, storedValue)
+		html, err := h.renderStoredMarkdown(ctx, rdb, path, storedValue, buildPublicSURL(h.getDomain(r), path))
 		if err != nil {
 			requestLogger{}.Errorf("markdown render failed: %s (%v)", path, err)
 			utils.Error(w, http.StatusInternalServerError, "internal", "Internal server error", nil, nil)
@@ -316,9 +317,10 @@ func writeRawContent(w http.ResponseWriter, r *http.Request, content string) {
 	}
 }
 
-func (h *Handler) renderStoredMarkdown(ctx context.Context, rdb redisStore, path string, storedValue storage.StoredValue) (string, error) {
+func (h *Handler) renderStoredMarkdown(ctx context.Context, rdb redisStore, path string, storedValue storage.StoredValue, canonical string) (string, error) {
 	options := convert.MarkdownOptions{
 		PageTitle: storedValue.Title,
+		Canonical: canonical,
 	}
 	topicName, isTopicItem, err := h.topicNameForPath(ctx, rdb, path)
 	if err != nil {

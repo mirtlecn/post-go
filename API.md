@@ -445,7 +445,7 @@ It is used only for:
 
 Public `GET /<path>` needs no authentication.
 
-Generated management response links use `BASE_DOMAIN` when configured. The value is normalized to a host and returned as `https://<host>`; otherwise links are built from `x-forwarded-proto`, `x-forwarded-host`, and `Host`.
+Generated management response links and rendered Markdown canonical URLs use `BASE_DOMAIN` when configured. The value is normalized to a host and returned as `https://<host>`; otherwise links are built from `x-forwarded-proto`, `x-forwarded-host`, and `Host`.
 
 The system does not support:
 
@@ -736,6 +736,7 @@ The HTML shell includes:
 - `meta charset`
 - viewport
 - `<title>`
+- canonical, OpenGraph, Twitter Card, and fallback social image metadata
 - embedded base CSS
 - inline layout CSS
 - `<article class="markdown-body">`
