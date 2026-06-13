@@ -34,7 +34,7 @@ func ConvertMarkdownToHTMLWithOptions(markdown string, options MarkdownOptions) 
 		Title:         options.PageTitle,
 		Canonical:     options.Canonical,
 		FallbackImage: true,
-		CSS:           "ravel_gfm_css",
+		CSS:           "ravel",
 		AssetMode:     "local",
 		AssetBaseURL:  "/asset/",
 		FooterHTML:    getConfiguredFooterHTML(),

@@ -703,7 +703,7 @@ They are not maintained in this repository. Update `gfm-it`, publish a new versi
 Embedded assets are served from stable key paths such as:
 
 ```text
-/asset/ravel_gfm_css
+/asset/ravel.gfm.css
 ```
 
 Behavior:

@@ -52,6 +52,8 @@ github.com/mirtlecn/gfm-it v0.2.0 h1:HTCj4wJ2KOwvlRIuyIjRW+LT1ll9/xfOF17mhAanmjk
 github.com/mirtlecn/gfm-it v0.2.0/go.mod h1:XmWw5GNZprWK+zMq/dXn3adoVDtebXGiZTK7YGcbltk=
 github.com/mirtlecn/gfm-it v0.2.1 h1:HlouN5C12z4V3weZ7R+DKadq8umefBABMxdisk10iu8=
 github.com/mirtlecn/gfm-it v0.2.1/go.mod h1:XmWw5GNZprWK+zMq/dXn3adoVDtebXGiZTK7YGcbltk=
+github.com/mirtlecn/gfm-it v0.3.0 h1:D5gRYLND54cCYP1TwywpSZYgndGRI5lnIcTkTnQ7CsA=
+github.com/mirtlecn/gfm-it v0.3.0/go.mod h1:XmWw5GNZprWK+zMq/dXn3adoVDtebXGiZTK7YGcbltk=
 github.com/philhofer/fwd v1.2.0 h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=
 github.com/philhofer/fwd v1.2.0/go.mod h1:RqIHx9QI14HlwKwm98g9Re5prTQ6LdeRQn+gXJFxsJM=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

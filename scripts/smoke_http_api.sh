@@ -118,7 +118,7 @@ assert_contains "$MD_HTML" "<title>Markdown Title</title>" "rendered markdown ti
 assert_contains "$MD_HTML" "<link rel=\"canonical\" href=\"$POST_BASE_URL/$SMOKE_PREFIX-md\">" "rendered markdown canonical"
 assert_contains "$MD_HTML" "<meta property=\"og:url\" content=\"$POST_BASE_URL/$SMOKE_PREFIX-md\">" "rendered markdown og url"
 assert_contains "$MD_HTML" "<meta property=\"og:image\" content=\"https://picsum.photos/seed/" "rendered markdown fallback image"
-assert_contains "$MD_HTML" "/asset/ravel_gfm_css" "rendered markdown uses embedded base asset"
+assert_contains "$MD_HTML" "/asset/ravel.gfm.css" "rendered markdown uses embedded base asset"
 EMBEDDED_ASSET_PATH="$(printf '%s' "$MD_HTML" | rg -o '/asset/[^"]+' -m 1)"
 EMBEDDED_ASSET_BODY="$(curl -sS -H "Referer: $POST_BASE_URL/$SMOKE_PREFIX-md" "$POST_BASE_URL$EMBEDDED_ASSET_PATH")"
 test -n "$EMBEDDED_ASSET_BODY"
