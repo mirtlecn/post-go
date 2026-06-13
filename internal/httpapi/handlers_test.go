@@ -2857,7 +2857,7 @@ func TestServeHTTPRawFalseStillEnablesRawMode(t *testing.T) {
 
 func TestServeHTTPRejectsDirectEmbeddedAssetAccess(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodGet, "/asset/ravel.gfm.css", nil)
+	request := httptest.NewRequest(http.MethodGet, "/asset/terminal.gfm.css", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -2873,7 +2873,7 @@ func TestServeHTTPRejectsDirectEmbeddedAssetAccess(t *testing.T) {
 
 func TestServeHTTPReturnsEmbeddedAssetForSameOriginReferer(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodGet, "/asset/ravel.gfm.css", nil)
+	request := httptest.NewRequest(http.MethodGet, "/asset/terminal.gfm.css", nil)
 	request.Host = "example.com"
 	request.Header.Set("Referer", "http://example.com/note")
 	response := httptest.NewRecorder()
@@ -2912,7 +2912,7 @@ func TestServeHTTPReturnsEmbeddedAssetHeadersForHEAD(t *testing.T) {
 
 func TestServeHTTPRejectsUnsupportedMethodForReservedAssetPath(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodDelete, "/asset/ravel.gfm.css", nil)
+	request := httptest.NewRequest(http.MethodDelete, "/asset/terminal.gfm.css", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -3033,7 +3033,7 @@ func TestServeHTTPReturnsHTMLWithDefaultPublicCacheHeader(t *testing.T) {
 func TestHandleJSONCreateRejectsReservedAssetPath(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)
-	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"asset/ravel.gfm.css","type":"text"}`))
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"url":"hello","path":"asset/terminal.gfm.css","type":"text"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
@@ -3051,7 +3051,7 @@ func TestHandleJSONCreateRejectsReservedAssetPath(t *testing.T) {
 func TestHandleDeleteRejectsReservedAssetPath(t *testing.T) {
 	store := &fakeRedisStore{}
 	handler := newTestHandler(store)
-	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"asset/ravel.gfm.css","type":"text"}`))
+	request := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(`{"path":"asset/terminal.gfm.css","type":"text"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 

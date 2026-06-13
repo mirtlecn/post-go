@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/minio/minio-go/v7 v7.2.0
-	github.com/mirtlecn/gfm-it v0.3.0
+	github.com/mirtlecn/gfm-it v0.3.2
 	github.com/redis/go-redis/v9 v9.20.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 )

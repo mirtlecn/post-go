@@ -165,7 +165,7 @@ func TestConvertMarkdownToHTMLUsesEmbeddedBaseAsset(t *testing.T) {
 	if strings.Contains(output, "cdn.jsdelivr.net") {
 		t.Fatalf("expected no external asset host, got %q", output)
 	}
-	if !strings.Contains(output, assets.MustAssetURL("ravel.gfm.css")) {
+	if !strings.Contains(output, assets.MustAssetURL("terminal.gfm.css")) {
 		t.Fatalf("expected embedded base asset url, got %q", output)
 	}
 }
