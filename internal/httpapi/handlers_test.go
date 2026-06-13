@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"post-go/internal/assets"
 	"post-go/internal/core"
 	"post-go/internal/s3"
 	"post-go/internal/storage"
@@ -2895,7 +2896,7 @@ func TestServeHTTPReturnsEmbeddedAssetForSameOriginReferer(t *testing.T) {
 
 func TestServeHTTPReturnsEmbeddedAssetHeadersForHEAD(t *testing.T) {
 	handler := newTestHandler(&fakeRedisStore{})
-	request := httptest.NewRequest(http.MethodHead, "/asset/highlight_js", nil)
+	request := httptest.NewRequest(http.MethodHead, assets.MustAssetURL("highlight-core.js"), nil)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
 	response := httptest.NewRecorder()
 
